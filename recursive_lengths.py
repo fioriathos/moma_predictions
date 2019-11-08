@@ -1,9 +1,11 @@
 import numpy as np
-from numba import jit
-#### Derivatives works ;)
-#@jit(nopython=True)
+from numba import jit,prange
+from copy import deepcopy
+########################################################################################
+#############################INFERENCE METHODS##########################################
+########################################################################################
 def parameters(gamma,dt,mlam,sig_l_s):
-    """return F,A, a as in Erik theory paper OK """
+    """ P(z_{t+dt}|z_t) = N(a+F z_t; A) """
     A = np.empty((2,2))
     A[0,0] =  sig_l_s/(2*gamma**3)*\
             (2*gamma*dt-3+4*np.exp(-gamma*dt)-np.exp(-2*gamma*dt))
@@ -22,7 +24,6 @@ def parameters(gamma,dt,mlam,sig_l_s):
     a[1,0] = mlam*(1-np.exp(-gamma*dt))
 
     return F, A, a
-#@jit(nopython=False)
 def grad_parameters(gamma,dt,mlam,sl2):
     """The non zero derivatives OK"""
     ############################################
@@ -57,14 +58,14 @@ def grad_parameters(gamma,dt,mlam,sl2):
     A_gamma[0,1] = sl2/2*(2*(1-emg)/gamma**2*dt*emg-2/gamma**3*(1-emg)**2)
     A_gamma[1,0] = A_gamma[0,1]
     return {'F_gamma':F_gamma,'a_mlam':a_mlam,'a_gamma':a_gamma,'A_sl2':A_sl2,'A_gamma':A_gamma}
-#@jit(nopython=True)
+#
 def new_mean_cov(b, B,F,A,a):
-    """From old mean mu and cov M return new one"""
+    """Start from P(z_t|D_t)= N(b;B) and find P(z_{t+dt}|D_t) =
+    N(a+Fb;A+FBF.T):= N(m,Q)  """
     # No numpy modules for speed up in numba
     m = a + np.dot(F,b)
     Q = A+np.dot(F,np.dot(B,F.T))
     return m, Q
-#@jit(nopython=False)
 def grad_new_mean_cov(b,B,F,A,a,grad_para,grad_mat_b):
     """Grad m and Q TO CHECK"""
     F_gamma=grad_para['F_gamma']
@@ -88,20 +89,20 @@ def grad_new_mean_cov(b,B,F,A,a,grad_para,grad_mat_b):
     Q_sm2 = fdgf('B_sm2')
     return {'m_mlam':m_mlam,'m_gamma':m_gamma,'m_sl2':m_sl2,'m_sm2':m_sm2,\
             'Q_mlam':Q_mlam,'Q_gamma':Q_gamma,'Q_sl2':Q_sl2,'Q_sm2':Q_sm2}
-#@jit(nopython=True)
-def posteriori_matrices(x,m,Q,sig_m_s):
-    """From updated m, Q return mean and cov of posterior b',B' in my paper (wich is normal dist)"""
-    den = sig_m_s+Q[0,0]
-    mu_ = np.zeros_like(m);
-    M_ = np.zeros_like(Q)
-    mu_[1,0] = m[1,0]+Q[0,1]/den*(x-m[0,0]) #mean lambda t+dt
-    mu_[0,0] = (sig_m_s*m[0,0]+Q[0,0]*x)/den #mean x t+dt
-    M_[0,0] = sig_m_s*Q[0,0]/den    #var x t+dt
-    M_[1,1] = Q[1,1] - Q[0,1]*Q[0,1]/den # var lam t+dt
-    M_[0,1] = Q[0,1]*sig_m_s/den
-    M_[1,0] = M_[0,1]
-    return mu_, M_
-#@jit(nopython=False)
+#
+def posteriori_matrices(x,m,Q,sm2):
+    """    P(z_{t+dt}|D_{t+dt})=P(x_{t+dt}^m|z_{t+dt})P(z_{t+dt}|D_t)
+    =N(x_{t+dt},sm2)N(m,Q)=N(b',B') """
+    den = sm2+Q[0,0]
+    b_ = np.zeros_like(m);
+    B_ = np.zeros_like(Q)
+    b_[1,0] = m[1,0]+Q[0,1]/den*(x-m[0,0]) #mean lambda t+dt
+    b_[0,0] = (sm2*m[0,0]+Q[0,0]*x)/den #mean x t+dt
+    B_[0,0] = sm2*Q[0,0]/den    #var x t+dt
+    B_[1,1] = Q[1,1] - Q[0,1]*Q[0,1]/den # var lam t+dt
+    B_[0,1] = Q[0,1]*sm2/den
+    B_[1,0] = B_[0,1]
+    return b_, B_
 def grad_posteriori_matrices(x,m,Q,sm2,grad_mat):
     """Grad b and B TO CHECK"""
     den = sm2+Q[0,0]
@@ -137,19 +138,11 @@ def grad_posteriori_matrices(x,m,Q,sm2,grad_mat):
     return {'B_gamma':dB('Q_gamma'),'B_mlam':dB('Q_mlam'),'B_sl2':dB('Q_sl2'),\
             'B_sm2':B_sm2,'b_sm2':b_sm2,\
             'b_gamma':db('m_gamma','Q_gamma'),'b_mlam':db('m_mlam','Q_mlam'),'b_sl2':db('m_sl2','Q_sl2')}
-#@jit(nopython=False)
-def grad_post_initial():
-    """They do not depend on the parameters so all zeros"""
-    mat = np.zeros((2,2)); vec = np.zeros((2,1))
-    return {'B_gamma':mat,'B_mlam':mat,'B_sl2':mat,\
-            'B_sm2':mat,'b_sm2':vec,\
-            'b_gamma':vec,'b_mlam':vec,'b_sl2':vec}
-#@jit(nopython=True)
+#
 def log_likelihood(x,m,Q,sm2):
     """Return P(x_{t+dt}|D_t) in log """
     den = sm2+Q[0,0]
     return -(x-m[0,0])**2/(2*den)-0.5*(np.log(den)+np.log(2*np.pi))
-#@jit(nopython=False)
 def grad_log_likelihood(x,m,Q,sm2,grad_mat):
     """Give gradient of log likelihood TO CHECK"""
     den = sm2 + Q[0,0]
@@ -163,49 +156,207 @@ def grad_log_likelihood(x,m,Q,sm2,grad_mat):
                     [grad('m_gamma','Q_gamma')],\
                     [grad('m_sl2','Q_sl2')],\
                     [grad('m_sm2','Q_sm2',1)]])
-#@jit(nopython=True)
-def objective_1cc(W,mlam,gamma,sl2,sm2,dt,m0,M0):
-    """Give -log_lik after one cell cycle and the next inital matrix"""
-    assert W.shape[0] == 1
-    F, A, a = parameters(gamma,dt,mlam,sl2)
-    # log likelihood at time zero
-    ll=-(W[0,0]-m0[0,0])**2/(2*sm2)-0.5*np.log(sm2)-np.log(2*np.pi)
-    m,Q = new_mean_cov(m0, M0,F,A,a)
-    for j in range(1,W.shape[1]):
-        ll += log_likelihood(W[0,j],m,Q,sm2)
-        mu, M = posteriori_matrices(W[0,j],m,Q,sm2)
-        m,Q = new_mean_cov(mu, M,F,A,a)
-    return -ll, np.array([[m[0,0]/2.,m[1,0]]]),np.array([[Q[0,0]/4.,Q[0,1]/2],[Q[0,1]/2,Q[1,1]]])
 #@jit(nopython=False)
-def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,dt,m0,M0,grad_mat0 = grad_post_initial()):
+    grad_matS['m_mlam']
+    grad_matS['m_mlam']
+#------------------ OBJECTIVE OVER CELL CYCLE/ LANE AND TOTAL-----------------------------------
+def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,grad_matS):
     """To check"""
+    ##### likelihood and gradient at initial conditions
+    ll = log_likelihood(W[0,0],s,S,sm2)
+    gll = grad_log_likelihood(W[0,0],s,S,sm2,grad_matS)
+    #### Initialize parameters for recurrence
     F, A, a = parameters(gamma,dt,mlam,sl2)
     grad_param = grad_parameters(gamma,dt,mlam,sl2)
-    ll=-(W[0,0]-m0[0,0])**2/(2*sm2)-0.5*np.log(sm2)-np.log(2*np.pi)
-    gll = np.zeros((4,1))
-    gll[3,0] = +(W[0,0]-m0[0,0])**2/(2*sm2**2)-0.5/(sm2)
-    m,Q = new_mean_cov(m0, M0,F,A,a)
-    grad_mat = grad_new_mean_cov(m0,M0,F,A,a,grad_param,grad_mat0)
+    ##### P(z_0|x_0^m)
+    b,B = posteriori_matrices(W[0,0],s,S,sm2)
+    grad_mat_b = grad_posteriori_matrices(W[0,0],s,S,sm2,grad_matS)
     for j in range(1,W.shape[1]):
+        ###### P(z_{t+dt}|D_t) = N(m,Q))
+        m,Q = new_mean_cov(b,B,F,A,a)
+        grad_mat_Q = grad_new_mean_cov(b,B,F,A,a,grad_param,grad_mat_b)
+        ##### P(z_{t+dt}|D_{t+dt}) = N(b',B')
+        b,B = posteriori_matrices(W[0,j],m,Q,sm2)
+        grad_mat_b = grad_posteriori_matrices(W[0,j],m,Q,sm2,grad_mat_Q)
+        ##### Likelihood
         ll += log_likelihood(W[0,j],m,Q,sm2)
-        gll += grad_log_likelihood(W[0,j],m,Q,sm2,grad_mat)
-        mu, M = posteriori_matrices(W[0,j],m,Q,sm2)
-        grad_mat_b = grad_posteriori_matrices(W[0,j],m,Q,sm2,grad_mat)
-        m,Q = new_mean_cov(mu, M,F,A,a)
-        grad_mat = grad_new_mean_cov(mu,M,F,A,a,grad_param,grad_mat_b)
-    return -ll, -gll
-#@jit(nopython=True)
-def predictions_1cc(W,mlam,gamma,sig_l_s,sig_m_s,dt,m0,M0):
-    """Return the optimal length and growth and their errors and next matrix"""
-    assert W.shape[0] == 1
-    F, A, a = parameters(gamma,dt,mlam,sig_l_s)
-    z = []; err_z = []
-    m,Q = new_mean_cov(m0, M0,F,A,a)
-    for j in range(W.shape[1]):
-        mu, M = posteriori_matrices(W[0,j],m,Q,sig_m_s)
-        z.append(np.array(mu)); err_z.append(np.sqrt(np.array([M[0,0],M[1,1]])))
-        m,Q = new_mean_cov(mu, M,F,A,a)
-    return np.hstack(z), np.vstack(err_z).T,np.array([[m[0,0]/2.,m[1,0]]]),np.array([[Q[0,0]/4.,Q[0,1]/2],[Q[0,1]/2,Q[1,1]]])
+        gll += grad_log_likelihood(W[0,j],m,Q,sm2,grad_mat_Q)
+    # Predict for daughter cell
+    m,Q = new_mean_cov(b,B,F,A,a)
+    grad_mat_Q = grad_new_mean_cov(b,B,F,A,a,grad_param,grad_mat_b)
+    # Find next cell initial conditions
+    s = np.array([[m[0,0]/2],[m[1,0]]])
+    S = np.array([[Q[0,0]/4,Q[0,1]/2],[Q[1,0]/2,Q[1,1]]])
+    grad_matS = {}
+    def gv(x):
+        grad_matS['{}'.format(x)] = \
+        np.array([[grad_mat_Q['{}'.format(x)][0,0]/2],[grad_mat_Q['{}'.format(x)][1,0]]])
+    def gm(x):
+        mat = grad_mat_Q['{}'.format(x)]
+        grad_matS['{}'.format(x)] = \
+        np.array([[mat[0,0]/4,mat[0,1]/2],[mat[1,0]/2,mat[1,1]]])
+    gv('m_mlam');gv('m_gamma');gv('m_sl2');gv('m_sm2')
+    gm('Q_mlam');gm('Q_gamma');gm('Q_sl2');gm('Q_sm2')
+    return -ll, -gll, s, S, grad_matS
+#
+def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,grad_matS):
+    """Compute the ll and gradient for 1 lane"""
+    reind = deepcopy(reind_); dat = deepcopy(dat_)
+    obj = 0; gobj = 0           # total objective and gradient
+    for i in range(len(dat)):
+        # Every time a cell do not have a "mother" (happen for first cells) intialize to initial conditions 
+        if type(dat[i][0])!=tuple:
+            dat[i][0] = [s,S,grad_matS]
+        else:
+            s,S,grad_matS = dat[i][0] # Unpack initial conditions
+        # Find ll over 1 cell cycle for 1 daughter
+        tmp =\
+        obj_and_grad_1cc(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,grad_matS=grad_matS) # calculate obj,gobj,p0 for one daugter
+        obj += tmp[0]; gobj += tmp[1] #update obj, gobj
+    # give the inital condition to the right cell lane
+        if np.isnan(reind[i,0]) == False:
+            dat[int(reind[i,0])][0] = tmp[2:] # s,S,grad_S
+    #If the second cell exists do the same
+        if np.sum(np.isnan(dat[i][1][1]))==0:
+            tmp = obj_and_grad_1cc(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,grad_matS=grad_matS)
+            obj += tmp[0]; gobj += tmp[1]
+            if np.isnan(reind[i,1]) == False:
+                dat[int(reind[i,1])][0] = tmp[2:]
+    #Return obj and gradobj
+    return obj, gobj
+#
+#@jit(parallel=True)
+def grad_obj_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt):
+    """Apply in parallel on all lane ID"""
+    tot_obj = 0; tot_grad = 0
+    for i in range(len(dat_v)):
+        reind = reind_v[i]; dat = dat_v[i]
+        obj, gobj = grad_obj_1lane(reind,dat,mlam,gamma,sl2,sm2,S,s,dt,grad_matS)
+        tot_obj += obj; tot_grad += gobj
+    return tot_obj, tot_grad
+#-------------------PREDICTIONS OVER CC/LANE AND TOTAL-----------------------------------------
+def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S):
+    """Return optiman length and growth (z) and std """
+    z = []; err_z=[]
+    #### Initialize parameters for recurrence
+    F, A, a = parameters(gamma,dt,mlam,sl2)
+    ##### P(z_0|x_0^m)
+    b,B = posteriori_matrices(W[0,0],s,S,sm2)
+    z.append(np.array(b)); err_z.append(np.sqrt(np.array([B[0,0],B[1,1]])))
+    for j in range(1,W.shape[1]):
+       ###### P(z_{t+dt}|D_t) = N(m,Q))
+        m,Q = new_mean_cov(b,B,F,A,a)
+        ##### P(z_{t+dt}|D_{t+dt}) = N(b',B')
+        b,B = posteriori_matrices(W[0,j],m,Q,sm2)
+        ##### Optimal predicitons
+        z.append(np.array(b)); err_z.append(np.sqrt(np.array([B[0,0],B[1,1]])))
+    # Find next cell intial conditions
+    m,Q = new_mean_cov(b,B,F,A,a)
+    # Find next cell initial conditions 
+    s = np.array([[m[0,0]/2],[m[1,0]]])
+    S = np.array([[Q[0,0]/4,Q[0,1]/2],[Q[1,0]/2,Q[1,1]]])
+    return z, err_z, s, S, grad_matS
+#
+def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,pos,val):
+    """Return best_predictiona and error for every cell in form
+    [laneID+pos+id,[z,z_err]]"""
+    reind = deepcopy(reind_); dat = deepcopy(dat_)
+    ret = [] # Return
+    for i in range(len(dat)):
+        # Every time a cell do not have a "mother" (happen for first cells) intialize to initial conditions
+        if type(dat[i][0])!=tuple:
+            dat[i][0] = [s,S,grad_matS]
+        else:
+            s,S,grad_matS = dat[i][0] # Unpack initial conditions
+        # Find prediction over 1 cell cycle for 1 daughter
+        tmp =\
+        predictions_1cc(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S)
+        z = tmp[0]; err_z = tmp[1]
+        ret.append([lane_ID+pos+str(val[i][1][0]),z,err_z])
+    # give the inital condition to the right cell lane
+        if np.isnan(reind[i,0]) == False:
+            dat[int(reind[i,0])][0] = tmp[2:] # s,S,grad_S
+    #If the second cell exists do the same
+        if np.sum(np.isnan(dat[i][1][1]))==0:
+            tmp = predictions_1cc(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S)
+            z = tmp[0]; err_z = tmp[1]
+            ret.append([lane_ID+pos+str(val[i][1][1]),z,err_z])
+            if np.isnan(reind[i,1]) == False:
+                dat[int(reind[i,1])][0] = tmp[2:]
+    #Return obj and gradobj
+    return ret
+#
+def prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt,lane_ID_v,pos_v,val_v):
+    """Apply in parallel on all lane ID"""
+    ret = []
+    for i in range(len(dat_v)):
+        reind = reind_v[i]; dat = dat_v[i]
+        ret.append(predictions_1lane(reind,dat,mlam,gamma,sl2,sm2,S,s,dt,lane_ID_v[i],pos_v[i],val_v[i]))
+    return ret
+
+################################################################################################
+############################## DATA TREATEMENT #################################################
+################################################################################################
+def build_intial_mat(df,leng):
+    """ Build the intiala matrix s,S and intial gradient grad_S """
+    from scipy.stats import linregress
+    print('WORK WITH LOG LENGTHS AND MINUTES!')
+    # Computation done in minutes (that's why *60)
+    def sleres(t,y):
+        """Return slope (lambda), intercept (x0) and residuals (form sm2)"""
+        t = t - t.iloc[0]
+        r = linregress(t,y)
+        return r.slope,r.intercept, y-(r.intercept+t*r.slope)
+    G = df.groupby('cell').apply(lambda x: sleres(x.time_sec/60.,x['{}'.format(leng)]))
+    G = np.vstack(G)
+    lam = G[:,0]; x0 = G[:,1]; res = G[:,2]
+    res = np.array([k for h in res for k in h])
+    sm2 = np.var(res)
+    ####### They do not depend on the parameters
+    mat = np.zeros((2,2)); vec = np.zeros((2,1))
+    grad_matS = {'m_mlam':vec,'m_gamma':vec,'m_sl2':vec,'m_sm2':vec,\
+                 'Q_mlam':mat,'Q_gamma':mat,'Q_sl2':mat,'Q_sm2':mat}
+    s = np.array([[np.mean(x0)],[np.mean(lam)]])
+    S = np.array([[np.var(x0),0],[0,np.var(lam)]])
+    return s, S, grad_matS,sm2
+#
+def build_mat(mother,daugther,dfl,leng):
+    """Find the correct structure. It will return [mum_ind,daughter1_ind,daughter2_ind] and [mum_ind,[Len(dau1),Len(daug2)]]"""
+    tmp = []; tmp1=[]
+    for i,j in zip(mother,daugther):
+        which = lambda x: dfl.loc[dfl['id']==j[x]]['{}'.format(leng)].values[None,:]
+        if j.shape[0]==1:
+            tmp.append([i,j[0],np.nan])
+            tmp1.append([i,[which(0),np.nan]])
+        else:
+            tmp1.append([i,[which(0),which(1)]])
+            tmp.append([i,j[0],j[1]])
+    return np.vstack(tmp),tmp1
+#
+def who_goes_where(val):
+    """ Connects the geanology e.g. if val [[19,[20,21]],[20,[22,nan]],[21,[23,nan]] ] it will return [[1,2],..] saying that division of cell 20 (daughter of 19) is at index 1 """
+    tmp1 = [np.where(val[:,:1]==k)[0] for k in val [:,1:2]]
+    tmp2 = [np.where(val[:,:1]==k)[0] for k in val [:,2:3]]
+    fun = lambda x: np.nan if x.size==0 else x
+    tmp1 = np.vstack(list(map(fun,tmp1)))
+    tmp2 = np.vstack(list(map(fun,tmp2)))
+    return np.hstack([tmp1,tmp2])
+#
+def build_data_strucutre(df,leng,dt=3.):
+    """Return for every lane the data with respective daughteres and initial conditions"""
+    s,S,grad_matS,_ = build_intial_mat(df,leng=leng)
+	#n_point = df.shape[0]
+    n_point = df.shape[0]
+    dat_v = []; reind_v = [];
+    for lid in df['lane_ID'].unique():
+        dfl = df.loc[df['lane_ID']==lid] # select one lande id
+        daugther = [dfl.loc[df['parent_id']==k].id.unique() for k in dfl.parent_id.unique()] # find its daughters
+        mothers = dfl.parent_id.unique() # respective mothers
+        # Correct data strucutre
+        val, dat = build_mat(mothers,daugther,dfl,leng)
+        reind = who_goes_where(val)
+        dat_v.append(dat); reind_v.append(reind)
+    return {'n_point':n_point,'dt':3.,'s':s,'S':S,'grad_matS':grad_matS,'reind_v':reind_v,'dat_v':dat_v}
 ################################################################################################
 ############################### TO BE CANCELLED  ###############################################
 ################################################################################################
