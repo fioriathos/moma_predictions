@@ -5,16 +5,17 @@ imp.reload(rl)
 class minimize_lengths(object):
     """Do minimization on """
     def __init__(self, free,fixed={},\
-                 method='TNC',boundary=None):
+                 method='L-BFGS-B',regularize=None,boundary=None):
         """These 3 dictionary fixed the free param, constrained param, boundary"""
         assert type(fixed)==dict
         assert type(free)==dict;assert free!={}
         self.fixed = fixed; self.free = free
         self.cons=None #constraints
         self.method = method
-        self.boundary = None
-        #if boundary==None: # Only positive values allowed
-        #    self.boundary = [(1e-13,None)]*len(free)
+        self.boundary = boundary
+        self.regularize = regularize #Parameter of regularization
+        if boundary==None: # Only positive values allowed
+            self.boundary = [(0,None)]*len(free)
         #Check all keys are either fixed or not
         assert set(fixed.keys())|set((free.keys()))==set(('sm2', 'sl2',\
                                                           'gamma','m_lam'))
@@ -54,9 +55,18 @@ class minimize_lengths(object):
         """Give obj and grad giving initial conditions and data"""
         m_lam,gamma,sl2,sm2 = x
         reind_v = in_dic['reind_v']; dt = in_dic['dt']
-        dat_v = in_dic['dat_v']; s = in_dic['s']
+        dat_v = in_dic['dat_v']; s = in_dic['s']; rescale = in_dic['rescale']
         S = in_dic['S']; grad_matS = in_dic['grad_matS']
-        return  rl.grad_obj_total(m_lam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt)
+        obj, grad = \
+    rl.grad_obj_total(m_lam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt,rescale)
+        if self.regularize is None:
+            return obj,grad 
+        else:
+            #Ridge regression for gamma param i.e. prior normal with variance
+            # 1/sqrt(regularize)
+            obj += self.regularize*x[1]**2
+            grad[1] += 2*self.regularize*x[1]
+            return obj, grad 
     def tot_grad_obj(self,x0,in_dic):
         """Return total obj and grad depending on the x0 np.array"""
         # From the reduced x0 rebuild entire vector and compute obj and grad
@@ -105,7 +115,18 @@ class minimize_lengths(object):
         """Use Analytical gradient until it workds. Then use numerical in case"""
         tmp,total_par,lik_grad = self.minimize_both_vers(in_dic=in_dic,numerical=False,x0=x0)
         tt = self.tot_objective(total_par,in_dic)
-        return tmp,total_par,lik_grad,tt
+        ret = {}
+        ret['log_lik'] = -tmp['fun']
+        ret['message'] = tmp['message']
+        ret['success'] = tmp['success']
+        ret['status'] = tmp['status']
+        ret['jac'] = tt[1].reshape(-1)
+        ret['best_param'] = {'mlam':total_par[0],\
+                            'gamma':total_par[1],\
+                            'sl2':total_par[2],\
+                            'sm2':total_par[3],\
+                            }
+        return ret
         #if tmp['success']==False:
         #    print("Probably a problem with gradient, do numerical")
         #    tmp,total_par,lik_grad = self.minimize_both_vers(in_dic=in_dic,x0=tmp['x'],numerical=True)

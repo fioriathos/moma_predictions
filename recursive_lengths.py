@@ -1,6 +1,7 @@
 import numpy as np
 from numba import jit,prange
 from copy import deepcopy
+import pandas as pd
 ########################################################################################
 #############################INFERENCE METHODS##########################################
 ########################################################################################
@@ -142,9 +143,15 @@ def grad_posteriori_matrices(x,m,Q,sm2,grad_mat):
 def log_likelihood(x,m,Q,sm2):
     """Return P(x_{t+dt}|D_t) in log """
     den = sm2+Q[0,0]
-    return -(x-m[0,0])**2/(2*den)-0.5*(np.log(den)+np.log(2*np.pi))
+    # if den gets too small..
+    np.seterr(invalid='raise') # if log negative stop everything
+    if den<1e-08:
+        tmp = -(x-m[0,0])**2/(2*den)-0.5*(np.log(1e10*den)-np.log(1e10)+np.log(2*np.pi))
+    else:
+        tmp =  -(x-m[0,0])**2/(2*den)-0.5*(np.log(den)+np.log(2*np.pi))
+    return tmp
 def grad_log_likelihood(x,m,Q,sm2,grad_mat):
-    """Give gradient of log likelihood TO CHECK"""
+    """Give gradient of log likelihood """
     den = sm2 + Q[0,0]
     def grad(m_d,Q_d,sd=0):
         dm0 = grad_mat['{}'.format(m_d)][0,0]
@@ -152,15 +159,12 @@ def grad_log_likelihood(x,m,Q,sm2,grad_mat):
         return   (x-m[0,0])*dm0/den\
                 +(x-m[0,0])**2/(2*den**2)*(dQ0+sd)\
                 -0.5/den*(dQ0+sd)
-    return np.array([[grad('m_mlam','Q_mlam')],\
+    return  np.array([[grad('m_mlam','Q_mlam')],\
                     [grad('m_gamma','Q_gamma')],\
                     [grad('m_sl2','Q_sl2')],\
                     [grad('m_sm2','Q_sm2',1)]])
-#@jit(nopython=False)
-    grad_matS['m_mlam']
-    grad_matS['m_mlam']
 #------------------ OBJECTIVE OVER CELL CYCLE/ LANE AND TOTAL-----------------------------------
-def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,grad_matS):
+def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,grad_matS,rescale):
     """To check"""
     ##### likelihood and gradient at initial conditions
     ll = log_likelihood(W[0,0],s,S,sm2)
@@ -185,21 +189,21 @@ def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,grad_matS):
     m,Q = new_mean_cov(b,B,F,A,a)
     grad_mat_Q = grad_new_mean_cov(b,B,F,A,a,grad_param,grad_mat_b)
     # Find next cell initial conditions
-    s = np.array([[m[0,0]/2],[m[1,0]]])
-    S = np.array([[Q[0,0]/4,Q[0,1]/2],[Q[1,0]/2,Q[1,1]]])
+    s = np.array([[m[0,0]-rescale*np.log(2)],[m[1,0]]])
+    S = np.array([[Q[0,0],Q[0,1]],[Q[1,0],Q[1,1]]])
     grad_matS = {}
     def gv(x):
         grad_matS['{}'.format(x)] = \
-        np.array([[grad_mat_Q['{}'.format(x)][0,0]/2],[grad_mat_Q['{}'.format(x)][1,0]]])
+        np.array([[grad_mat_Q['{}'.format(x)][0,0]],[grad_mat_Q['{}'.format(x)][1,0]]])
     def gm(x):
         mat = grad_mat_Q['{}'.format(x)]
         grad_matS['{}'.format(x)] = \
-        np.array([[mat[0,0]/4,mat[0,1]/2],[mat[1,0]/2,mat[1,1]]])
+        np.array([[mat[0,0],mat[0,1]],[mat[1,0],mat[1,1]]])
     gv('m_mlam');gv('m_gamma');gv('m_sl2');gv('m_sm2')
     gm('Q_mlam');gm('Q_gamma');gm('Q_sl2');gm('Q_sm2')
     return -ll, -gll, s, S, grad_matS
 #
-def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,grad_matS):
+def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,grad_matS,rescale):
     """Compute the ll and gradient for 1 lane"""
     reind = deepcopy(reind_); dat = deepcopy(dat_)
     obj = 0; gobj = 0           # total objective and gradient
@@ -211,31 +215,32 @@ def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,grad_matS):
             s,S,grad_matS = dat[i][0] # Unpack initial conditions
         # Find ll over 1 cell cycle for 1 daughter
         tmp =\
-        obj_and_grad_1cc(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,grad_matS=grad_matS) # calculate obj,gobj,p0 for one daugter
+        obj_and_grad_1cc(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,grad_matS=grad_matS,rescale=rescale) # calculate obj,gobj,p0 for one daugter
         obj += tmp[0]; gobj += tmp[1] #update obj, gobj
     # give the inital condition to the right cell lane
         if np.isnan(reind[i,0]) == False:
             dat[int(reind[i,0])][0] = tmp[2:] # s,S,grad_S
     #If the second cell exists do the same
         if np.sum(np.isnan(dat[i][1][1]))==0:
-            tmp = obj_and_grad_1cc(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,grad_matS=grad_matS)
+            tmp =\
+            obj_and_grad_1cc(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,grad_matS=grad_matS,rescale=rescale)
             obj += tmp[0]; gobj += tmp[1]
             if np.isnan(reind[i,1]) == False:
                 dat[int(reind[i,1])][0] = tmp[2:]
     #Return obj and gradobj
     return obj, gobj
-#
 #@jit(parallel=True)
-def grad_obj_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt):
+def grad_obj_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt,rescale):
     """Apply in parallel on all lane ID"""
     tot_obj = 0; tot_grad = 0
     for i in range(len(dat_v)):
         reind = reind_v[i]; dat = dat_v[i]
-        obj, gobj = grad_obj_1lane(reind,dat,mlam,gamma,sl2,sm2,S,s,dt,grad_matS)
+        obj, gobj =\
+        grad_obj_1lane(reind,dat,mlam,gamma,sl2,sm2,S,s,dt,grad_matS,rescale)
         tot_obj += obj; tot_grad += gobj
     return tot_obj, tot_grad
-#-------------------PREDICTIONS OVER CC/LANE AND TOTAL-----------------------------------------
-def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S):
+    #-------------------PREDICTIONS OVER CC/LANE AND TOTAL-----------------------------------------
+def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,rescale):
     """Return optiman length and growth (z) and std """
     z = []; err_z=[]
     #### Initialize parameters for recurrence
@@ -252,55 +257,67 @@ def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S):
         z.append(np.array(b)); err_z.append(np.sqrt(np.array([B[0,0],B[1,1]])))
     # Find next cell intial conditions
     m,Q = new_mean_cov(b,B,F,A,a)
-    # Find next cell initial conditions 
-    s = np.array([[m[0,0]/2],[m[1,0]]])
-    S = np.array([[Q[0,0]/4,Q[0,1]/2],[Q[1,0]/2,Q[1,1]]])
-    return z, err_z, s, S, grad_matS
+    # Find next cell initial conditions
+    s = np.array([[m[0,0]-rescale*np.log(2)],[m[1,0]]])
+    S = np.array([[Q[0,0],Q[0,1]],[Q[1,0],Q[1,1]]])
+    return z, err_z, s, S
 #
-def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,pos,val):
+def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,val,rescale):
     """Return best_predictiona and error for every cell in form
-    [laneID+pos+id,[z,z_err]]"""
+    [laneID+id,[z,z_err]]"""
     reind = deepcopy(reind_); dat = deepcopy(dat_)
     ret = [] # Return
     for i in range(len(dat)):
         # Every time a cell do not have a "mother" (happen for first cells) intialize to initial conditions
         if type(dat[i][0])!=tuple:
-            dat[i][0] = [s,S,grad_matS]
+            dat[i][0] = [s,S]
         else:
-            s,S,grad_matS = dat[i][0] # Unpack initial conditions
+            s,S= dat[i][0] # Unpack initial conditions
         # Find prediction over 1 cell cycle for 1 daughter
         tmp =\
-        predictions_1cc(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S)
+        predictions_1cc(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,rescale=rescale)
         z = tmp[0]; err_z = tmp[1]
-        ret.append([lane_ID+pos+str(val[i][1][0]),z,err_z])
+        ret.append([lane_ID+'_'+str(val[i,1]),z,err_z])
     # give the inital condition to the right cell lane
         if np.isnan(reind[i,0]) == False:
             dat[int(reind[i,0])][0] = tmp[2:] # s,S,grad_S
     #If the second cell exists do the same
         if np.sum(np.isnan(dat[i][1][1]))==0:
-            tmp = predictions_1cc(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S)
+            tmp =\
+            predictions_1cc(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,rescale=rescale)
             z = tmp[0]; err_z = tmp[1]
-            ret.append([lane_ID+pos+str(val[i][1][1]),z,err_z])
+            ret.append([lane_ID+'_'+str(val[i,2]),z,err_z])
             if np.isnan(reind[i,1]) == False:
                 dat[int(reind[i,1])][0] = tmp[2:]
     #Return obj and gradobj
     return ret
 #
-def prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt,lane_ID_v,pos_v,val_v):
-    """Apply in parallel on all lane ID"""
-    ret = []
+def prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale):
+    """Apply in parallel on all lane ID and return a np.array"""
+    tmp = []
     for i in range(len(dat_v)):
         reind = reind_v[i]; dat = dat_v[i]
-        ret.append(predictions_1lane(reind,dat,mlam,gamma,sl2,sm2,S,s,dt,lane_ID_v[i],pos_v[i],val_v[i]))
-    return ret
-
+        tmp.append(predictions_1lane(reind,dat,mlam,gamma,sl2,sm2,S,s,dt,lane_ID_v[i],val_v[i],rescale=rescale))
+    # Return a nice behave np array with cell_ID, z[0],z[1],err_z[0],err_z[1]
+    foo = []
+    for lan in tmp:
+        for cid in lan:
+            foo.append(np.hstack((np.hstack([cid[0]]*len(cid[1]))[:,None],np.hstack(cid[1]).T,np.vstack(cid[2]))))
+    return np.vstack(foo)
+def predict(min_dic, in_dic):
+    """It is just a wrapper to keep nice data structure where min_dic is the dict
+    returned by minimize and in dic the one returned by build_data_strucure"""
+    md = min_dic['best_param']
+    return prediction_total(md['mlam'],md['gamma'],md['sl2'],md['sm2'],\
+                            in_dic['reind_v'],in_dic['dat_v'],in_dic['s'],\
+                           in_dic['S'],in_dic['dt'],in_dic['lane_ID_v'],\
+                            in_dic['val_v'],in_dic['rescale'])
 ################################################################################################
 ############################## DATA TREATEMENT #################################################
 ################################################################################################
 def build_intial_mat(df,leng):
     """ Build the intiala matrix s,S and intial gradient grad_S """
     from scipy.stats import linregress
-    print('WORK WITH LOG LENGTHS AND MINUTES!')
     # Computation done in minutes (that's why *60)
     def sleres(t,y):
         """Return slope (lambda), intercept (x0) and residuals (form sm2)"""
@@ -342,21 +359,35 @@ def who_goes_where(val):
     tmp2 = np.vstack(list(map(fun,tmp2)))
     return np.hstack([tmp1,tmp2])
 #
-def build_data_strucutre(df,leng,dt=3.):
+def build_data_strucutre(df,leng,rescale,dt):
     """Return for every lane the data with respective daughteres and initial conditions"""
-    s,S,grad_matS,_ = build_intial_mat(df,leng=leng)
+    df['log_resc_'+leng] = np.log(df['{}'.format(leng)])*rescale
+    print("The variable to use is: log_resc_{}".format(leng))
+    s,S,grad_matS,sm = build_intial_mat(df,leng='log_resc_'+leng)
 	#n_point = df.shape[0]
     n_point = df.shape[0]
     dat_v = []; reind_v = [];
+    val_v = []; lane_ID_v = []
     for lid in df['lane_ID'].unique():
         dfl = df.loc[df['lane_ID']==lid] # select one lande id
         daugther = [dfl.loc[df['parent_id']==k].id.unique() for k in dfl.parent_id.unique()] # find its daughters
         mothers = dfl.parent_id.unique() # respective mothers
         # Correct data strucutre
-        val, dat = build_mat(mothers,daugther,dfl,leng)
+        val, dat = build_mat(mothers,daugther,dfl,'log_resc_'+leng)
         reind = who_goes_where(val)
         dat_v.append(dat); reind_v.append(reind)
-    return {'n_point':n_point,'dt':3.,'s':s,'S':S,'grad_matS':grad_matS,'reind_v':reind_v,'dat_v':dat_v}
+        val_v.append(val); lane_ID_v.append(lid)
+    return df,{'n_point':n_point,'dt':3.,'s':s,'S':S,'grad_matS':grad_matS,\
+            'reind_v':reind_v,'dat_v':dat_v, 'val_v':val_v,\
+               'lane_ID_v':lane_ID_v,'rescale':rescale,'sm':sm }
+#
+def merge_pandas(df, pred_array):
+    """Merge the predicted results with the intial df"""
+    df1 = pd.DataFrame(pred_array[:,1:],\
+                       columns=('pred_z0','pred_z1','err_z0','err_z1'),dtype=np.float64)
+    assert sum(df['lane_ID']+df['id'].apply(lambda x: '_'+str(x)+'.0') !=\
+        pred_array[:,0]) == 0, 'something wrong in merging'
+    return pd.concat([df,df1],axis=1)
 ################################################################################################
 ############################### TO BE CANCELLED  ###############################################
 ################################################################################################
@@ -386,7 +417,7 @@ if  __name__=="__main__":
     m0 = np.array([[np.mean(W[:,0])],[np.mean(X[:,0])]])
     M0 = np.array([[np.var(W[:,0]),0],[0,np.var(X[:,0])]])
     t1 = time.time()
-    print(obj_and_grad_1cc(W,mlam=1.,gamma=0.02,sl2=.03**2,sm2=0.08,dt=3.,m0=m0,M0=M0))
+    print(obj_and_grad_1cc(W,mlam=1.,gamma=0.02,sl2=.03**2,sm2=0.08,dt=3.,m0=m0,M0=M0,rescale=rescale))
     print(time.time()-t1)
     #z, err_z,_,_ = predictions_1cc(W,mlam=1.,gamma=0.02,sig_l_s=.03**4,sig_m_s=0.08,dt=3.,m0=m0,M0=M0)
     #print(W_er(1),W_er(2))
