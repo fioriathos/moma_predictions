@@ -265,6 +265,7 @@ def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,rescale):
 def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,val,rescale):
     """Return best_predictiona and error for every cell in form
     [laneID+id,[z,z_err]]"""
+    from IPython.core.debugger import set_trace
     reind = deepcopy(reind_); dat = deepcopy(dat_)
     ret = [] # Return
     for i in range(len(dat)):
@@ -278,6 +279,7 @@ def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,val,rescale)
         predictions_1cc(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,rescale=rescale)
         z = tmp[0]; err_z = tmp[1]
         ret.append([lane_ID+'_'+str(val[i,1]),z,err_z])
+        #print(np.mean(np.hstack(z).T[:,0]-dat[i][1][0]))
     # give the inital condition to the right cell lane
         if np.isnan(reind[i,0]) == False:
             dat[int(reind[i,0])][0] = tmp[2:] # s,S,grad_S
@@ -287,8 +289,10 @@ def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,val,rescale)
             predictions_1cc(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,rescale=rescale)
             z = tmp[0]; err_z = tmp[1]
             ret.append([lane_ID+'_'+str(val[i,2]),z,err_z])
+            #print(np.mean(np.hstack(z).T[:,0]-dat[i][1][1]))
             if np.isnan(reind[i,1]) == False:
                 dat[int(reind[i,1])][0] = tmp[2:]
+        #set_trace()
     #Return obj and gradobj
     return ret
 #
@@ -381,13 +385,27 @@ def build_data_strucutre(df,leng,rescale,dt):
             'reind_v':reind_v,'dat_v':dat_v, 'val_v':val_v,\
                'lane_ID_v':lane_ID_v,'rescale':rescale,'sm':sm }
 #
-def merge_pandas(df, pred_array):
-    """Merge the predicted results with the intial df"""
-    df1 = pd.DataFrame(pred_array[:,1:],\
-                       columns=('pred_z0','pred_z1','err_z0','err_z1'),dtype=np.float64)
-    assert sum(df['lane_ID']+df['id'].apply(lambda x: '_'+str(x)+'.0') !=\
-        pred_array[:,0]) == 0, 'something wrong in merging'
-    return pd.concat([df,df1],axis=1)
+def merge_df_pred(df,pred_mat):
+    """Merge the output from predict with the initial dataframe"""
+    # From mat to dataframe
+    dft = pd.DataFrame(pred_mat,columns=\
+                       ('cell_','pred_z0','pred_growth_rate',\
+                        'err_z0','err_growth_rate'))
+    # Give numerical values
+    dft[['pred_z0','pred_growth_rate','err_z0','err_growth_rate']] = \
+            dft[['pred_z0','pred_growth_rate','err_z0','err_growth_rate']].apply(pd.to_numeric)
+    #Create subindex for merging
+    dft['sub_ind'] = dft.groupby('cell_')['pred_z0'].transform(lambda x:\
+                                                               np.arange(len(x)))
+    # Create same indexing in df
+    df['cell_'] = df['lane_ID']+df['id'].apply(lambda x: '_'+str(x)+'.0')
+    df['sub_ind'] = df.groupby('cell_')['time_sec'].transform(lambda x:\
+                                                              np.arange(len(x)))
+    #Concat, reindex, delete column used for mergin 
+    dff = \
+    pd.concat([df.set_index(['cell_','sub_ind']),dft.set_index(['cell_','sub_ind'])],axis=1)
+    dff = dff.reset_index()
+    return dff.drop(['cell_','sub_ind'],axis=1)
 ################################################################################################
 ############################### TO BE CANCELLED  ###############################################
 ################################################################################################
@@ -417,7 +435,7 @@ if  __name__=="__main__":
     m0 = np.array([[np.mean(W[:,0])],[np.mean(X[:,0])]])
     M0 = np.array([[np.var(W[:,0]),0],[0,np.var(X[:,0])]])
     t1 = time.time()
-    print(obj_and_grad_1cc(W,mlam=1.,gamma=0.02,sl2=.03**2,sm2=0.08,dt=3.,m0=m0,M0=M0,rescale=rescale))
+    #print(obj_and_grad_1cc(W,mlam=1.,gamma=0.02,sl2=.03**2,sm2=0.08,dt=3.,m0=m0,M0=M0,rescale=rescale))
     print(time.time()-t1)
     #z, err_z,_,_ = predictions_1cc(W,mlam=1.,gamma=0.02,sig_l_s=.03**4,sig_m_s=0.08,dt=3.,m0=m0,M0=M0)
     #print(W_er(1),W_er(2))
