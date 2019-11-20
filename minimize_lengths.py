@@ -18,13 +18,17 @@ class minimize_lengths(object):
             self.boundary = [(0,None)]*len(free)
         #Check all keys are either fixed or not
         assert set(fixed.keys())|set((free.keys()))==set(('sm2', 'sl2',\
-                                                          'gamma','m_lam'))
+                                                          'gamma','m_lam',\
+                                                         'sx02','sl02','k0'))
         # Fix them as model parameters
         def set_att(key,val):
             if key=='gamma':self.gamma=val
             if key=='sl2':self.sl2=val
             if key=='sm2':self.sm2=val
             if key=='m_lam':self.m_lam=val
+            if key=='sx02': self.sx02=val
+            if key=='sl02': self.sl02=val
+            if key=='k0': self.k0=val
         #set attributes
         for key,val in free.items():
             set_att(key,val)
@@ -34,7 +38,11 @@ class minimize_lengths(object):
         """From np.array vec divide in array the non fixed and dict the fix by giving fixed"""
         from collections import OrderedDict
         vecout = {}
-        tmp = OrderedDict([('m_lam',vec[1]),('gamma',vec[1]),( 'sl2',vec[2]),( 'sm2',vec[3])])
+        tmp = OrderedDict([('m_lam',vec[0]),('gamma',vec[1]),\
+                           ('sl2',vec[2]),('sm2',vec[3]),\
+                           ('sx02',vec[4]),('sl02',vec[5]),\
+                           ('k0',vec[6])
+                          ])
         for key in kwargs:
             vecout[key]=tmp[key]
             del tmp[key]
@@ -42,7 +50,9 @@ class minimize_lengths(object):
     def rebuild_param(self,vec,**kwargs):
         """ Inverse operation than fix_par"""
         from collections import OrderedDict
-        tmp = OrderedDict([( 'm_lam',None),('gamma',None),( 'sl2',None),( 'sm2',None)])
+        tmp = OrderedDict([( 'm_lam',None),('gamma',None),( 'sl2',None),\
+                           ( 'sm2',None),( 'sx02',None),( 'sl02',None),\
+                           ( 'k0',None)])
         for key,val in kwargs.items():
             assert val!=None, "Can't have None as fixed values"
             tmp[key]=val
@@ -53,12 +63,12 @@ class minimize_lengths(object):
         return np.array([tmp[key] for key in tmp])
     def tot_objective(self,x,in_dic):
         """Give obj and grad giving initial conditions and data"""
-        m_lam,gamma,sl2,sm2 = x
+        m_lam,gamma,sl2,sm2,sx02,sl02,k0 = x
         reind_v = in_dic['reind_v']; dt = in_dic['dt']
         dat_v = in_dic['dat_v']; s = in_dic['s']; rescale = in_dic['rescale']
         S = in_dic['S']; grad_matS = in_dic['grad_matS']
         obj, grad = \
-    rl.grad_obj_total(m_lam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt,rescale)
+    rl.grad_obj_total(m_lam,gamma,sl2,sm2,sx02,sl02,k0,reind_v,dat_v,s,S,grad_matS,dt,rescale)
         if self.regularize is None:
             return obj,grad 
         else:
@@ -83,6 +93,9 @@ class minimize_lengths(object):
             if i=='gamma':x0[1]=self.free[i]
             if i=='sl2':x0[2]=self.free[i]
             if i=='sm2':x0[3]=self.free[i]
+            if i=='sx02':x0[4]=self.free[i]
+            if i=='sl02':x0[5]=self.free[i]
+            if i=='k0':x0[6]=self.free[i]
         x0 = [x for x in x0 if x is not None]
         return np.array(x0)
     def minimize_both_vers(self,in_dic,x0=None,numerical=False):
@@ -125,7 +138,11 @@ class minimize_lengths(object):
                             'gamma':total_par[1],\
                             'sl2':total_par[2],\
                             'sm2':total_par[3],\
+                            'sx02':total_par[4],\
+                            'sl02':total_par[5],\
+                            'k0':total_par[6],\
                             }
+        assert tmp['message']==True, 'wrong minimization'
         return ret
         #if tmp['success']==False:
         #    print("Probably a problem with gradient, do numerical")
