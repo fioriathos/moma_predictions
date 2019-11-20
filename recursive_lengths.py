@@ -352,17 +352,19 @@ def asym_dist_1lane(reind_,dat_,dt,rescale):
     from scipy.stats import linregress
     from copy import deepcopy
     reind = deepcopy(reind_); dat = deepcopy(dat_)
-    distx0 = []; distlam = []           # total objective and gradient
+    distx0 = []; distlam = []; distk0 = []           # total objective and gradient
     def pred_moth(i,j):
-        """Linear predict the mother length and save it in dat list and return intercept of daugther"""
+        """Predict division length and growth rate. Do same for inital one"""
         # Linear fit one cell cycle to estimate length mother and lenght daughter
         W=dat[i][1][j].reshape(-1); t = np.arange(0,dt*len(W),dt)
         tmp = linregress(t,W)
+        tmp1 = linregress(t[:4],W[:4])
+        tmp2 = linregress(t[:4],W[-4:])
         if np.isnan(reind[i,j]) == False:
             # predict cell lenght at division and el_rat
             foo = np.append(t,t[-1]+dt/2)*tmp.slope+tmp.intercept
-            dat[int(reind[i,j])][0] = {'ml':foo[-1],'mlam':tmp.slope}
-        return tmp.intercept, tmp.slope #x0 and lambda
+            dat[int(reind[i,j])][0] = {'ml':foo[-1],'mlam':tmp2.slope}
+        return tmp.intercept, tmp1.slope #x0 and lambda
     ## APPLY
     for i in range(len(dat)):
         # If cell doesn't have mother just predict length of daugther and save them
@@ -375,19 +377,21 @@ def asym_dist_1lane(reind_,dat_,dt,rescale):
             x0,lam = pred_moth(i,0)
             distx0.append(dat[i][0]['ml']-rescale*np.log(2)-x0)
             distlam.append(dat[i][0]['mlam']-lam)
+            distk0.append([x0,lam])
             if np.sum(np.isnan(dat[i][1][1]))==0:
                 x0,lam = pred_moth(i,1)
                 distx0.append(dat[i][0]['ml']-rescale*np.log(2)-x0)
                 distlam.append(dat[i][0]['mlam']-lam)
-    return distx0, distlam
+                distk0.append([x0,lam])
+    return distx0, distlam, distk0
 def asym_dist(reind_v,dat_v,dt,rescale):
     """Find the variance for the non symmetric division"""
-    distx0 = []; distlam = []
+    distx0 = []; distlam = []; distk0 =[]
     for i,j in enumerate(dat_v):
-        dx0 , dlam = asym_dist_1lane(reind_v[i],dat_v[i],dt,rescale)
-        distx0.append(dx0); distlam.append(dlam)
+        dx0 , dlam, dk0 = asym_dist_1lane(reind_v[i],dat_v[i],dt,rescale)
+        distx0.append(dx0); distlam.append(dlam); distk0.append(dk0)
     flat = lambda dist: np.array([j for k in dist for j in k])
-    return flat(distx0),flat(distlam)
+    return flat(distx0),flat(distlam), flat(distk0)
 #-------------- MATRICES FORM ----------------------------------------
 def build_intial_mat(df,leng):
     """ Build the intiala matrix s,S and intial gradient grad_S """
@@ -455,9 +459,11 @@ def build_data_strucutre(df,leng,rescale,dt):
         reind = who_goes_where(val)
         dat_v.append(dat); reind_v.append(reind)
         val_v.append(val); lane_ID_v.append(lid)
+    sx02,sl02,k0 = asym_dist(reind_v,dat_v,dt,rescale)
     return df,{'n_point':n_point,'dt':dt,'s':s,'S':S,'grad_matS':grad_matS,\
             'reind_v':reind_v,'dat_v':dat_v, 'val_v':val_v,\
-               'lane_ID_v':lane_ID_v,'rescale':rescale,'sm2':sm2 }
+               'lane_ID_v':lane_ID_v,'rescale':rescale,'sm2':sm2,\
+               'sx02':np.var(sx02),'sl02':np.var(sl02),'k0':np.var(k0[:,0]*k0[:,1])-np.mean(k0[:,0])*np.mean(k0[:,1]) }
 #
 def merge_df_pred(df,pred_mat):
     """Merge the output from predict with the initial dataframe"""
