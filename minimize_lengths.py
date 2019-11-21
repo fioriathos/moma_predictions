@@ -15,7 +15,7 @@ class minimize_lengths(object):
         self.boundary = boundary
         self.regularize = regularize #Parameter of regularization
         if boundary==None: # Only positive values allowed
-            self.boundary = [(0,None)]*len(free)
+            self.boundary = [(1e-13,None)]*len(free)
         #Check all keys are either fixed or not
         assert set(fixed.keys())|set((free.keys()))==set(('sm2', 'sl2',\
                                                           'gamma','m_lam'))
@@ -60,7 +60,7 @@ class minimize_lengths(object):
         obj, grad = \
     rl.grad_obj_total(m_lam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt,rescale)
         if self.regularize is None:
-            return obj,grad 
+            return obj,grad
         else:
             #Ridge regression for gamma param i.e. prior normal with variance
             # 1/sqrt(regularize)

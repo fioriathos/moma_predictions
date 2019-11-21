@@ -144,7 +144,8 @@ def log_likelihood(x,m,Q,sm2):
     """Return P(x_{t+dt}|D_t) in log """
     den = sm2+Q[0,0]
     # if den gets too small..
-    np.seterr(invalid='raise') # if log negative stop everything
+    #np.seterr(invalid='raise') # if log negative stop everything
+    assert den>0, "wrong state space Q[00]={} and sm2 + {}".format(Q[0,0],sm2)
     if den<1e-08:
         tmp = -(x-m[0,0])**2/(2*den)-0.5*(np.log(1e10*den)-np.log(1e10)+np.log(2*np.pi))
     else:
@@ -365,6 +366,9 @@ def who_goes_where(val):
 #
 def build_data_strucutre(df,leng,rescale,dt):
     """Return for every lane the data with respective daughteres and initial conditions"""
+    #Sometimes cells with 1 data point are present and we don't want them
+    df = df.groupby('cell').filter(lambda x: x.values.shape[0]>1) #
+    #rescae
     df['log_resc_'+leng] = np.log(df['{}'.format(leng)])*rescale
     print("The variable to use is: log_resc_{}".format(leng))
     s,S,grad_matS,sm = build_intial_mat(df,leng='log_resc_'+leng)
@@ -381,9 +385,9 @@ def build_data_strucutre(df,leng,rescale,dt):
         reind = who_goes_where(val)
         dat_v.append(dat); reind_v.append(reind)
         val_v.append(val); lane_ID_v.append(lid)
-    return df,{'n_point':n_point,'dt':3.,'s':s,'S':S,'grad_matS':grad_matS,\
+    return df,{'n_point':n_point,'dt':dt,'s':s,'S':S,'grad_matS':grad_matS,\
             'reind_v':reind_v,'dat_v':dat_v, 'val_v':val_v,\
-               'lane_ID_v':lane_ID_v,'rescale':rescale,'sm':sm }
+               'lane_ID_v':lane_ID_v,'rescale':rescale,'sm2':sm }
 #
 def merge_df_pred(df,pred_mat):
     """Merge the output from predict with the initial dataframe"""
