@@ -34,7 +34,7 @@ class minimize_lengths(object):
         """From np.array vec divide in array the non fixed and dict the fix by giving fixed"""
         from collections import OrderedDict
         vecout = {}
-        tmp = OrderedDict([('m_lam',vec[1]),('gamma',vec[1]),( 'sl2',vec[2]),( 'sm2',vec[3])])
+        tmp = OrderedDict([('m_lam',vec[0]),('gamma',vec[1]),( 'sl2',vec[2]),( 'sm2',vec[3])])
         for key in kwargs:
             vecout[key]=tmp[key]
             del tmp[key]
