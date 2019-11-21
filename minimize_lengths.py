@@ -70,20 +70,20 @@ class minimize_lengths(object):
         obj, grad = \
     rl.grad_obj_total(m_lam,gamma,sl2,sm2,sx02,sl02,k0,reind_v,dat_v,s,S,grad_matS,dt,rescale)
         if self.regularize is None:
-            return obj,grad 
+            return obj,grad
         else:
             #Ridge regression for gamma param i.e. prior normal with variance
             # 1/sqrt(regularize)
             obj += self.regularize*x[1]**2
             grad[1] += 2*self.regularize*x[1]
-            return obj, grad 
+            return obj, grad
     def tot_grad_obj(self,x0,in_dic):
         """Return total obj and grad depending on the x0 np.array"""
         # From the reduced x0 rebuild entire vector and compute obj and grad
         tmp = self.tot_objective(self.rebuild_param(x0,**self.fixed),in_dic)
         obj = tmp[0]
         # return the sliced grad
-        grad =self.fix_par(tmp[1], **self.fixed)[0] 
+        grad =self.fix_par(tmp[1], **self.fixed)[0]
         return obj,grad.reshape(-1)
     def initialize(self):
         """Return the x np array"""
@@ -229,7 +229,7 @@ class minimize_lengths(object):
 #        gpy = self.return_model()
 #        H = gpy.multiproc_hessian(self.time,self.path,self.nproc,\
 #                                  self.lamb1,self.lamb2,normalized)
-#        return H 
+#        return H
 #    def predict(self,alpha):
 #        """predict paths with used alpha scaling"""
 #        gpy = self.return_model()

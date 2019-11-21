@@ -154,7 +154,8 @@ def log_likelihood(x,m,Q,sm2):
     """Return P(x_{t+dt}|D_t) in log """
     den = sm2+Q[0,0]
     # if den gets too small..
-    np.seterr(invalid='raise') # if log negative stop everything
+    #np.seterr(invalid='raise') # if log negative stop everything
+    assert den>0, "wrong state space Q[0,0] {} sm2 {}".format(Q[0,0],sm2)
     if den<1e-08:
         tmp = -(x-m[0,0])**2/(2*den)-0.5*(np.log(1e10*den)-np.log(1e10)+np.log(2*np.pi))
     else:
@@ -258,10 +259,21 @@ def grad_obj_total(mlam,gamma,sl2,sm2,sx02,sl02,k0,reind_v,dat_v,s,S,grad_matS,d
     tot_obj = 0; tot_grad = 0
     for i in range(len(dat_v)):
         reind = reind_v[i]; dat = dat_v[i]
-        obj, gobj =\
-        grad_obj_1lane(reind,dat,mlam,gamma,sl2,sm2,sx02,sl02,k0,S,s,dt,grad_matS,rescale)
+        try:
+            obj, gobj =\
+            grad_obj_1lane(reind,dat,mlam,gamma,sl2,sm2,sx02,sl02,k0,S,s,dt,grad_matS,rescale)
+        except AssertionError:
+            print("mlam,gamma,sl2,sm2,sx02,sl02,k0",mlam,gamma,sl2,sm2,sx02,sl02,k0)
+            assert False
         tot_obj += obj; tot_grad += gobj
     return tot_obj, tot_grad
+#
+def pack_grad(gamma,sl2,in_dic):
+    """It's for testing, not necessary afterwards"""
+    return grad_obj_total(in_dic['s'][1,0],gamma,sl2,in_dic['sm2'],\
+                          in_dic['sx02'],in_dic['sl02'],in_dic['k0'],\
+                         in_dic['reind_v'],in_dic['dat_v'],in_dic['s'],\
+                          in_dic['S'],in_dic['grad_matS'],in_dic['dt'],in_dic['rescale'])
 #-------------------PREDICTIONS OVER CC/LANE AND TOTAL-----------------------------------------
 def predictions_1cc(W,mlam,gamma,sl2,sm2,sx02,sl02,k0,dt,s,S,rescale):
     """Return optiman length and growth (z) and std """
