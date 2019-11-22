@@ -368,11 +368,11 @@ def build_data_strucutre(df,leng,rescale):
     """Return for every lane the data with respective daughteres and initial conditions"""
     #Sometimes cells with 1 data point are present and we don't want them
     df = df.groupby('cell').filter(lambda x: x.values.shape[0]>1) #
-    dt = (df['time_sec'][1]-df['time_sec'][0])/60
+    dt = (df['time_sec'].iloc[1]-df['time_sec'].iloc[0])/60
     assert dt == 3 or dt == 6, "look if dt make sense"
     #rescae
     df['log_resc_'+leng] = np.log(df['{}'.format(leng)])*rescale
-    print("The variable to use is: log_resc_{}".format(leng))
+    #print("The variable to use is: log_resc_{}".format(leng))
     s,S,grad_matS,sm = build_intial_mat(df,leng='log_resc_'+leng)
 	#n_point = df.shape[0]
     n_point = df.shape[0]
