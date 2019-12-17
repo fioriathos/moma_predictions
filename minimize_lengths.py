@@ -127,6 +127,18 @@ class minimize_lengths(object):
                             'sm2':total_par[3],\
                             }
         return ret
+    def gradient_descent(self,in_dic,eta=1e-06,runtime=10000,x0=None,show=False):
+        if x0 is None:
+            theta = self.initialize()
+        else:
+            theta=x0
+        for k in range(runtime):
+            _ , grtheta =  self.tot_grad_obj(x0=theta,in_dic=in_dic)
+            if show:
+                print('objective',_)
+            vt = eta*grtheta
+            theta = theta-vt
+        return theta,_
         #if tmp['success']==False:
         #    print("Probably a problem with gradient, do numerical")
         #    tmp,total_par,lik_grad = self.minimize_both_vers(in_dic=in_dic,x0=tmp['x'],numerical=True)

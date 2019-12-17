@@ -380,7 +380,7 @@ def build_data_strucutre(df,leng,rescale):
     val_v = []; lane_ID_v = []
     for lid in df['lane_ID'].unique():
         dfl = df.loc[df['lane_ID']==lid] # select one lande id
-        daugther = [dfl.loc[df['parent_id']==k].id.unique() for k in dfl.parent_id.unique()] # find its daughters
+        daugther = [dfl.loc[dfl['parent_id']==k].id.unique() for k in dfl.parent_id.unique()] # find its daughters
         mothers = dfl.parent_id.unique() # respective mothers
         # Correct data strucutre
         val, dat = build_mat(mothers,daugther,dfl,'log_resc_'+leng)
@@ -412,6 +412,15 @@ def merge_df_pred(df,pred_mat):
     pd.concat([df.set_index(['cell_','sub_ind']),dft.set_index(['cell_','sub_ind'])],axis=1)
     dff = dff.reset_index()
     return dff.drop(['cell_','sub_ind'],axis=1)
+def find_best_lengths(files,pwd='/scicore/home/nimwegen/fiori/MoMA_predictions/predictions/',lengths=['length_um','length_erik','length_moma','length_raw','length_pixel']):
+    """Find best length measurment """
+    tmp=[]
+    for k in lengths:
+        df = pd.read_csv(pwd+files+'_'+k+'.csv')
+        err = np.mean(np.abs(df['err_growth_rate']/df['pred_growth_rate']))
+        tmp.append([files,k,err])
+    tmp = np.vstack(tmp)
+    return tmp[tmp[:,2]==min(tmp[:,2])]
 ################################################################################################
 ############################### TO BE CANCELLED  ###############################################
 ################################################################################################
