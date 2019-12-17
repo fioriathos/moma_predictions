@@ -2,6 +2,8 @@ import numpy as np
 from numba import jit,prange
 from copy import deepcopy
 import pandas as pd
+import time
+from pathos.multiprocessing import ProcessingPool as Pool
 ########################################################################################
 #############################INFERENCE METHODS##########################################
 ########################################################################################
@@ -204,7 +206,8 @@ def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,grad_matS,rescale):
     gm('Q_mlam');gm('Q_gamma');gm('Q_sl2');gm('Q_sm2')
     return -ll, -gll, s, S, grad_matS
 #
-def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,grad_matS,rescale):
+def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,\
+                   S,s,dt,grad_matS,rescale,nparr=False):
     """Compute the ll and gradient for 1 lane"""
     reind = deepcopy(reind_); dat = deepcopy(dat_)
     obj = 0; gobj = 0           # total objective and gradient
@@ -229,7 +232,10 @@ def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,grad_matS,rescale):
             if np.isnan(reind[i,1]) == False:
                 dat[int(reind[i,1])][0] = tmp[2:]
     #Return obj and gradobj
-    return obj, gobj
+    if nparr:
+        return np.append(np.array([obj]),gobj)
+    else:
+        return obj, gobj
 #@jit(parallel=True)
 def grad_obj_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt,rescale):
     """Apply in parallel on all lane ID"""
@@ -240,6 +246,16 @@ def grad_obj_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt,rescale):
         grad_obj_1lane(reind,dat,mlam,gamma,sl2,sm2,S,s,dt,grad_matS,rescale)
         tot_obj += obj; tot_grad += gobj
     return tot_obj, tot_grad
+
+def grad_obj_total_parallel(mlam,gamma,sl2,sm2,reind_v,\
+                            dat_v,s,S,grad_matS,dt,rescale,nproc=10):
+    """Apply in parallel on all lane ID"""
+    p = Pool(nproc)
+    fun = lambda x:\
+        grad_obj_1lane(x[0],x[1],mlam,gamma,sl2,sm2,S,s,dt,grad_matS,rescale,True)
+    ret = p.map(fun,zip(reind_v,dat_v))
+    ret = np.sum(np.vstack(ret),axis=0)
+    return ret[0],ret[1:]
     #-------------------PREDICTIONS OVER CC/LANE AND TOTAL-----------------------------------------
 def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,rescale):
     """Return optiman length and growth (z) and std """

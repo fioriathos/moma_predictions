@@ -51,14 +51,18 @@ class minimize_lengths(object):
                 tmp[key]=vec[0]
                 vec = np.delete(vec,0)
         return np.array([tmp[key] for key in tmp])
-    def tot_objective(self,x,in_dic):
+    def tot_objective(self,x,in_dic,par):
         """Give obj and grad giving initial conditions and data"""
         m_lam,gamma,sl2,sm2 = x
         reind_v = in_dic['reind_v']; dt = in_dic['dt']
         dat_v = in_dic['dat_v']; s = in_dic['s']; rescale = in_dic['rescale']
         S = in_dic['S']; grad_matS = in_dic['grad_matS']
-        obj, grad = \
-    rl.grad_obj_total(m_lam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt,rescale)
+        if par:
+            obj, grad = \
+        rl.grad_obj_total_parallel(m_lam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt,rescale)
+        else:
+            obj, grad = \
+        rl.grad_obj_total(m_lam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt,rescale)
         if self.regularize is None:
             return obj,grad
         else:
@@ -67,13 +71,16 @@ class minimize_lengths(object):
             obj += self.regularize*x[1]**2
             grad[1] += 2*self.regularize*x[1]
             return obj, grad 
-    def tot_grad_obj(self,x0,in_dic):
+    def tot_grad_obj(self,x0,in_dic,par=False):
         """Return total obj and grad depending on the x0 np.array"""
         # From the reduced x0 rebuild entire vector and compute obj and grad
-        tmp = self.tot_objective(self.rebuild_param(x0,**self.fixed),in_dic)
+        #import time
+        #ts = time.time()
+        tmp = self.tot_objective(self.rebuild_param(x0,**self.fixed),in_dic,par)
         obj = tmp[0]
         # return the sliced grad
         grad =self.fix_par(tmp[1], **self.fixed)[0] 
+        #print(time.time()-ts)
         return obj,grad.reshape(-1)
     def initialize(self):
         """Return the x np array"""
@@ -133,12 +140,29 @@ class minimize_lengths(object):
         else:
             theta=x0
         for k in range(runtime):
-            _ , grtheta =  self.tot_grad_obj(x0=theta,in_dic=in_dic)
+            _ , grtheta =  self.tot_grad_obj(x0=theta,in_dic=in_dic,par=True)
             if show:
                 print('objective',_)
             vt = eta*grtheta
             theta = theta-vt
         return theta,_
+    def ADAM(self,in_dic,b1=0.9,b2=0.99,eta=1e-03,eps=1e-10,runtime=10000,x0=None,show=False):
+        if x0 is None:
+            theta = self.initialize()
+        else:
+            theta=x0
+        mt=st=0
+        for k in range(1,runtime):
+            _ , gt =  self.tot_grad_obj(x0=theta,in_dic=in_dic,par=True)
+            mt =b1*mt+(1-b1)*gt
+            st = b2*st+(1-b2)*np.power(gt,2)
+            mh = mt/(1-b1**k)
+            sh = st/(1-b2**k)
+            if show:
+                print('objective',_)
+            theta = theta-eta*mh/(np.sqrt(sh)+eps)
+        return theta,_
+ 
         #if tmp['success']==False:
         #    print("Probably a problem with gradient, do numerical")
         #    tmp,total_par,lik_grad = self.minimize_both_vers(in_dic=in_dic,x0=tmp['x'],numerical=True)
