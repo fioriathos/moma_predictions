@@ -1,6 +1,7 @@
 import numpy as np
 import recursive_lengths as rl
 import imp
+import time
 imp.reload(rl)
 class minimize_lengths(object):
     """Do minimization on """
@@ -51,7 +52,7 @@ class minimize_lengths(object):
                 tmp[key]=vec[0]
                 vec = np.delete(vec,0)
         return np.array([tmp[key] for key in tmp])
-    def tot_objective(self,x,in_dic,par):
+    def tot_objective(self,x,in_dic,par=False):
         """Give obj and grad giving initial conditions and data"""
         m_lam,gamma,sl2,sm2 = x
         reind_v = in_dic['reind_v']; dt = in_dic['dt']
@@ -74,7 +75,6 @@ class minimize_lengths(object):
     def tot_grad_obj(self,x0,in_dic,par=False):
         """Return total obj and grad depending on the x0 np.array"""
         # From the reduced x0 rebuild entire vector and compute obj and grad
-        #import time
         #ts = time.time()
         tmp = self.tot_objective(self.rebuild_param(x0,**self.fixed),in_dic,par)
         obj = tmp[0]
@@ -141,10 +141,10 @@ class minimize_lengths(object):
             theta=x0
         for k in range(runtime):
             _ , grtheta =  self.tot_grad_obj(x0=theta,in_dic=in_dic,par=True)
-            if show:
-                print('objective',_)
             vt = eta*grtheta
             theta = theta-vt
+            if show:
+                print('objective',_,theta)
         return theta,_
     def ADAM(self,in_dic,b1=0.9,b2=0.99,eta=1e-03,eps=1e-10,runtime=10000,x0=None,show=False):
         if x0 is None:

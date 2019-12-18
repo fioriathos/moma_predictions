@@ -325,6 +325,11 @@ def prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,res
         for cid in lan:
             foo.append(np.hstack((np.hstack([cid[0]]*len(cid[1]))[:,None],np.hstack(cid[1]).T,np.vstack(cid[2]))))
     return np.vstack(foo)
+def cost_function(mlam,gamma,sl2,sm2,reind_v,dat_v,vec_dat_v,s,S,dt,lane_ID_v,val_v,rescale):
+    predicted =\
+    prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale)[:,1:2]
+    return np.sum((predicted.astype(np.float)-vec_dat_v)**2)
+
 def predict(min_dic, in_dic):
     """It is just a wrapper to keep nice data structure where min_dic is the dict
     returned by minimize and in dic the one returned by build_data_strucure"""
@@ -403,9 +408,19 @@ def build_data_strucutre(df,leng,rescale):
         reind = who_goes_where(val)
         dat_v.append(dat); reind_v.append(reind)
         val_v.append(val); lane_ID_v.append(lid)
+    vec_dat_v = []
+    for k in dat_v:
+            for j in k:
+                vec_dat_v.append(j[1][0])
+                if np.any(np.isnan(j[1][1])):
+                    continue
+                else:
+                    vec_dat_v.append(j[1][1])
+    vec_dat_v = np.hstack(vec_dat_v).T
     return df,{'n_point':n_point,'dt':dt,'s':s,'S':S,'grad_matS':grad_matS,\
             'reind_v':reind_v,'dat_v':dat_v, 'val_v':val_v,\
-               'lane_ID_v':lane_ID_v,'rescale':rescale,'sm2':sm }
+               'lane_ID_v':lane_ID_v,'rescale':rescale,'sm2':sm,\
+              'vec_dat_v':vec_dat_v}
 #
 def merge_df_pred(df,pred_mat):
     """Merge the output from predict with the initial dataframe"""
