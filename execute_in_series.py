@@ -17,7 +17,7 @@ def find_param(filen,leng,resc,rsq,const=False):
     df,in_dic = rl.build_data_strucutre(dfo,leng,resc)
     # Set sl2 such taht cv2=0.25
     mod = \
-    mn.minimize_lengths(free={'gamma':0.0125,'sl2':0.012*2*in_dic['s'][1,0]**2*0.25,'sm2':in_dic['sm2'],'m_lam':in_dic['s'][1,0]},fixed={})
+    mn.minimize_lengths(free={'gamma':0.0125,'sl2':0.012*2*in_dic['s'][1,0]**2*0.25,'m_lam':in_dic['s'][1,0]},fixed={'sm2':20.})
     mod.boundary[1] = (1e-13,1.)
     if const:
         mod.boundary[1] = (1e-13,1./40)
@@ -42,4 +42,4 @@ if __name__=='__main__':
     #    pickle.dump(min_dic,f)
     print(file_name,length_type,min_dic)
     df = predict(file_name,min_dic,leng=length_type,resc=100)
-    df.to_csv('/scicore/home/nimwegen/fiori/MoMA_predictions/predictions/'+file_name+'_'+length_type+'.csv')
+    #df.to_csv('/scicore/home/nimwegen/fiori/MoMA_predictions/predictions/'+file_name+'_'+length_type+'.csv')
