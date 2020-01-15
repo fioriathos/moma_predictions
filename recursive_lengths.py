@@ -237,17 +237,17 @@ def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,\
     else:
         return obj, gobj
 #@jit(parallel=True)
-def grad_obj_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt,rescale):
-    """Apply in parallel on all lane ID"""
-    tot_obj = 0; tot_grad = 0
-    for i in range(len(dat_v)):
-        reind = reind_v[i]; dat = dat_v[i]
-        obj, gobj =\
-        grad_obj_1lane(reind,dat,mlam,gamma,sl2,sm2,S,s,dt,grad_matS,rescale)
-        tot_obj += obj; tot_grad += gobj
-    return tot_obj, tot_grad
+#def grad_obj_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt,rescale):
+#    """Apply in parallel on all lane ID"""
+#    tot_obj = 0; tot_grad = 0
+#    for i in range(len(dat_v)):
+#        reind = reind_v[i]; dat = dat_v[i]
+#        obj, gobj =\
+#        grad_obj_1lane(reind,dat,mlam,gamma,sl2,sm2,S,s,dt,grad_matS,rescale)
+#        tot_obj += obj; tot_grad += gobj
+#    return tot_obj, tot_grad
 
-def grad_obj_total_parallel(mlam,gamma,sl2,sm2,reind_v,\
+def grad_obj_total(mlam,gamma,sl2,sm2,reind_v,\
                             dat_v,s,S,grad_matS,dt,rescale,nproc=10):
     """Apply in parallel on all lane ID"""
     p = Pool(nproc)
@@ -257,6 +257,12 @@ def grad_obj_total_parallel(mlam,gamma,sl2,sm2,reind_v,\
     ret = np.sum(np.vstack(ret),axis=0)
     return ret[0],ret[1:]
     #-------------------PREDICTIONS OVER CC/LANE AND TOTAL-----------------------------------------
+def grad_obj_wrap(x,in_dic):
+    mlam,gamma,sl2,sm2 = x
+    reind_v,dat_v,grad_matS,s,S,dt,lane_ID_v,val_v,rescale =\
+    in_dic['reind_v'],in_dic['dat_v'],in_dic['grad_matS'],in_dic['s'],in_dic['S'],in_dic['dt'],in_dic['lane_ID_v'],in_dic['val_v'],in_dic['rescale']
+    return grad_obj_total(mlam,gamma,sl2,sm2,reind_v, dat_v,s,S,grad_matS,dt,rescale,nproc=10)
+
 def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,rescale):
     """Return optiman length and growth (z) and std """
     z = []; err_z=[]
@@ -313,25 +319,48 @@ def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,val,rescale)
     #Return obj and gradobj
     return ret
 #
-def prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale):
+#def prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale):
+#    """Apply in parallel on all lane ID and return a np.array"""
+#    tmp = []
+#    for i in range(len(dat_v)):
+#        reind = reind_v[i]; dat = dat_v[i]
+#        tmp.append(predictions_1lane(reind,dat,mlam,gamma,sl2,sm2,S,s,dt,lane_ID_v[i],val_v[i],rescale=rescale))
+#    # Return a nice behave np array with cell_ID, z[0],z[1],err_z[0],err_z[1]
+#    foo = []
+#    for lan in tmp:
+#        for cid in lan:
+#            foo.append(np.hstack((np.hstack([cid[0]]*len(cid[1]))[:,None],np.hstack(cid[1]).T,np.vstack(cid[2]))))
+#    return np.vstack(foo)
+def prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale,nproc=10):
     """Apply in parallel on all lane ID and return a np.array"""
-    tmp = []
-    for i in range(len(dat_v)):
-        reind = reind_v[i]; dat = dat_v[i]
-        tmp.append(predictions_1lane(reind,dat,mlam,gamma,sl2,sm2,S,s,dt,lane_ID_v[i],val_v[i],rescale=rescale))
+    p = Pool(nproc)
+    fun = lambda x:\
+        predictions_1lane(x[0],x[1],mlam,gamma,sl2,sm2,S,s,dt,x[2],x[3],rescale)
+    tmp = p.map(fun,zip(reind_v,dat_v,lane_ID_v,val_v))
     # Return a nice behave np array with cell_ID, z[0],z[1],err_z[0],err_z[1]
     foo = []
     for lan in tmp:
         for cid in lan:
             foo.append(np.hstack((np.hstack([cid[0]]*len(cid[1]))[:,None],np.hstack(cid[1]).T,np.vstack(cid[2]))))
     return np.vstack(foo)
-def cost_function(mlam,gamma,sl2,sm2,reind_v,dat_v,vec_dat_v,s,S,dt,lane_ID_v,val_v,rescale):
+def cost_function(x,in_dic,r2=True):
+    """Return the r2 between predicted and observed data"""
+    mlam,gamma,sl2,sm2 = x
+    reind_v,dat_v,vec_dat_v,s,S,dt,lane_ID_v,val_v,rescale =\
+    in_dic['reind_v'],in_dic['dat_v'],in_dic['vec_dat_v'],in_dic['s'],in_dic['S'],in_dic['dt'],in_dic['lane_ID_v'],in_dic['val_v'],in_dic['rescale']
     predicted =\
     prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale)[:,1:2]
-    return np.sum((predicted.astype(np.float)-vec_dat_v)**2)
+    # nan is used to keep same structure eventough we do not have gradient
+    if r2:
+        return\
+    1-np.sum((predicted.astype(np.float)-vec_dat_v)**2)/np.sum((vec_dat_v-np.mean(vec_dat_v))**2),\
+            np.array([np.nan,np.nan,np.nan,np.nan])
+    else:
+        return np.log(np.sum((predicted.astype(np.float)-vec_dat_v)**2)),\
+                np.array([np.nan,np.nan,np.nan,np.nan])
 
 def predict(min_dic, in_dic):
-    """It is just a wrapper to keep nice data structure where min_dic is the dict
+    """It is just a  = xwrapper to keep nice data structure where min_dic is the dict
     returned by minimize and in dic the one returned by build_data_strucure"""
     md = min_dic['best_param']
     return prediction_total(md['mlam'],md['gamma'],md['sl2'],md['sm2'],\
@@ -453,19 +482,26 @@ def find_best_lengths(files,pwd='/scicore/home/nimwegen/fiori/MoMA_predictions/p
     tmp = np.vstack(tmp)
     return tmp[tmp[:,2]==min(tmp[:,2])]
 ################################################################################################
-############################### TO BE CANCELLED  ###############################################
+############################### The stocastics models  #########################################
 ################################################################################################
-def ornstein_uhlenbeck(mlam,gamma,sig,length=30,ncel=10,dt=3.):
-    mat = np.zeros((ncel,length))
-    dW = np.random.normal(loc=mat,scale=np.sqrt(dt))
-    mat[:,0]=mlam+sig*dW[:,0]
-    for k in range(1,length):
-        mat[:,k]=mat[:,k-1]-gamma*(mat[:,k-1]-mlam)*dt+sig*dW[:,k-1]
-    return mat
-def integrated_ou(mlam,gamma,sig,sigm2,X0=1,sx0=0.1,length=30,ncel=10,dt=3.):
-    X = ornstein_uhlenbeck(mlam,gamma,sig,length,ncel,dt)
+def ornstein_uhlenbeck(mlam,gamma,sl2,length=30,ncel=10,dt=3.,dtsim=1):
+    sam = dt/dtsim
+    lengthsim = length*sam
+    assert (sam).is_integer(), "not sam integer"
+    assert (lengthsim).is_integer(), "no lan integer"
+    sam = int(sam); lengthsim=int(lengthsim)
+    mat = np.zeros((ncel,lengthsim))
+    sig = np.sqrt(sl2)
+    dW = np.random.normal(loc=mat,scale=np.sqrt(dtsim))
+    add = sig*dW*dtsim
+    mat[:,0]=add[:,0]+mlam
+    for k in range(1,lengthsim):
+        mat[:,k]=mat[:,k-1]-gamma*(mat[:,k-1]-mlam)*dtsim+add[:,k]
+    return mat[:,::sam]
+def integrated_ou(mlam,gamma,sl2,sm2,X0=1,sx0=0.1,length=30,ncel=10,dt=3.,dtsim=1):
+    X = ornstein_uhlenbeck(mlam,gamma,sl2,length,ncel,dt,dtsim)
     X0 = np.random.normal(loc=np.ones((ncel,1)),scale=sx0)
-    return np.random.normal(loc=np.hstack([X0,np.cumsum(X,axis=1)*dt+X0]),scale=np.sqrt(sigm2))[:,:-1], X
+    return np.random.normal(loc=np.hstack([X0,np.cumsum(X,axis=1)*dt+X0]),scale=np.sqrt(sm2))[:,:-1], X
 def W_er(st): 
     diffW= abs(W-z[0,:])
     percW = sum(sum(diffW>st*err_z[0,:]))/diffW.shape[1]

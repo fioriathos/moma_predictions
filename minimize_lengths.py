@@ -6,7 +6,7 @@ imp.reload(rl)
 class minimize_lengths(object):
     """Do minimization on """
     def __init__(self, free,fixed={},\
-                 method='L-BFGS-B',regularize=None,boundary=None):
+                 method='L-BFGS-B',boundary=None):
         """These 3 dictionary fixed the free param, constrained param, boundary"""
         assert type(fixed)==dict
         assert type(free)==dict;assert free!={}
@@ -14,7 +14,6 @@ class minimize_lengths(object):
         self.cons=None #constraints
         self.method = method
         self.boundary = boundary
-        self.regularize = regularize #Parameter of regularization
         if boundary==None: # Only positive values allowed
             self.boundary = [(1e-13,None)]*len(free)
         #Check all keys are either fixed or not
@@ -52,31 +51,24 @@ class minimize_lengths(object):
                 tmp[key]=vec[0]
                 vec = np.delete(vec,0)
         return np.array([tmp[key] for key in tmp])
-    def tot_objective(self,x,in_dic,par=False):
+    def tot_objective(self,x,in_dic,fun=rl.grad_obj_wrap,reg=None):
         """Give obj and grad giving initial conditions and data"""
-        m_lam,gamma,sl2,sm2 = x
-        reind_v = in_dic['reind_v']; dt = in_dic['dt']
-        dat_v = in_dic['dat_v']; s = in_dic['s']; rescale = in_dic['rescale']
-        S = in_dic['S']; grad_matS = in_dic['grad_matS']
-        if par:
-            obj, grad = \
-        rl.grad_obj_total_parallel(m_lam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt,rescale)
-        else:
-            obj, grad = \
-        rl.grad_obj_total(m_lam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt,rescale)
-        if self.regularize is None:
+        obj, grad = fun(x,in_dic)
+        if reg is None:
             return obj,grad
         else:
-            #Ridge regression for gamma param i.e. prior normal with variance
+            #Ridge regression for sigmal param i.e. prior normal with variance
             # 1/sqrt(regularize)
-            obj += self.regularize*x[1]**2
-            grad[1] += 2*self.regularize*x[1]
+            obj += reg*(x[1]**2+x[2]**2)
+            grad[1] += 2*reg*x[1]
+            grad[2] += 2*reg*x[2]
             return obj, grad 
-    def tot_grad_obj(self,x0,in_dic,par=False):
+    def tot_grad_obj(self,x0,in_dic,fun=rl.grad_obj_wrap,reg=None):
         """Return total obj and grad depending on the x0 np.array"""
         # From the reduced x0 rebuild entire vector and compute obj and grad
         #ts = time.time()
-        tmp = self.tot_objective(self.rebuild_param(x0,**self.fixed),in_dic,par)
+        tmp =\
+        self.tot_objective(self.rebuild_param(x0,**self.fixed),in_dic,fun,reg)
         obj = tmp[0]
         # return the sliced grad
         grad =self.fix_par(tmp[1], **self.fixed)[0] 
@@ -92,16 +84,18 @@ class minimize_lengths(object):
             if i=='sm2':x0[3]=self.free[i]
         x0 = [x for x in x0 if x is not None]
         return np.array(x0)
-    def minimize_both_vers(self,in_dic,x0=None,numerical=False):
+    def minimize_both_vers(self,in_dic,x0=None,numerical=False,fun=rl.grad_obj_wrap,reg=None):
         """Minimize module.tot_grad_obj(t,path) at point x0={mu:,sigmas,..} considering dic['fix]={mu:,..}"""
         from scipy.optimize import minimize
         # Initialize intial condition for first time
         if x0 is None:
             x0 = self.initialize()
-
-        fun = lambda x: self.tot_grad_obj(x0=x,in_dic=in_dic)
+        if fun==rl.cost_function:
+            assert numerical==True, "no gradient for cost fun"
         if numerical:
-            tmp = minimize(self.tot_grad_obj, x0, args=(in_dic),\
+            funct = lambda x,y,z:\
+                self.tot_grad_obj(x0=x,in_dic=y,fun=z,reg=reg)[0]
+            tmp = minimize(funct, x0, args=(in_dic,fun),\
                            method=self.method,jac = False,\
                            bounds=self.boundary,\
                            #gtol = 1e-07*in_dic['n_point'],\
@@ -109,18 +103,20 @@ class minimize_lengths(object):
                            options={'maxiter':max(1000, 10*len(x0))})
         else:
             #print "SOMETIMES PROBLEMS WITH ANALYTICAL GRADIENT"
-            tmp = minimize(self.tot_grad_obj, x0, args=(in_dic),\
+            tmp = minimize(self.tot_grad_obj, x0, args=(in_dic,fun,reg),\
                            method=self.method,jac = True,\
                            bounds=self.boundary,\
                            constraints = self.cons,\
                            #gtol = 1e-07*in_dic['n_point'],\
                            options={'maxiter':max(1000, 10*len(x0))})
         total_par = self.rebuild_param(tmp['x'],**self.fixed)
-        lik_grad = self.tot_grad_obj(x0=tmp['x'],in_dic=in_dic)
+        lik_grad = tmp['fun']
         return tmp,total_par,lik_grad
-    def minimize(self,in_dic, x0=None):
+    def minimize(self,in_dic, x0=None, numerical=False,\
+                 fun=rl.grad_obj_wrap,reg=None):
         """Use Analytical gradient until it workds. Then use numerical in case"""
-        tmp,total_par,lik_grad = self.minimize_both_vers(in_dic=in_dic,numerical=False,x0=x0)
+        tmp,total_par,lik_grad =\
+        self.minimize_both_vers(in_dic=in_dic,numerical=numerical,x0=x0,fun=fun,reg=reg)
         tt = self.tot_objective(total_par,in_dic)
         ret = {}
         ret['log_lik'] = -tmp['fun']
@@ -133,14 +129,21 @@ class minimize_lengths(object):
                             'sl2':total_par[2],\
                             'sm2':total_par[3],\
                             }
+        if tmp['status']:
+            self.m_lam = total_par[0]
+            self.gamma = total_par[1]
+            self.sl2= total_par[2]
+            self.sm2= total_par[3]
         return ret
-    def gradient_descent(self,in_dic,eta=1e-06,runtime=10000,x0=None,show=False):
+    def gradient_descent(self,in_dic,eta=1e-06,runtime=10000,x0=None\
+                         ,show=False,fun=rl.grad_obj_wrap,reg=None):
         if x0 is None:
             theta = self.initialize()
         else:
             theta=x0
         for k in range(runtime):
-            _ , grtheta =  self.tot_grad_obj(x0=theta,in_dic=in_dic,par=True)
+            _ , grtheta = self.tot_grad_obj(x0=theta,in_dic=in_dic,\
+                              fun=fun,reg=reg)
             vt = eta*grtheta
             theta = theta-vt
             if show:
