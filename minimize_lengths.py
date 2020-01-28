@@ -73,6 +73,9 @@ class minimize_lengths(object):
         # return the sliced grad
         grad =self.fix_par(tmp[1], **self.fixed)[0] 
         #print(time.time()-ts)
+        #RESCALE LOG LIKELIHOOD IN ORDER TO HAVE MORE SUITABLE NUMBERS
+        obj = obj/in_dic['n_point']
+        grad = grad/in_dic['n_point']
         return obj,grad.reshape(-1)
     def initialize(self):
         """Return the x np array"""
@@ -98,7 +101,7 @@ class minimize_lengths(object):
             tmp = minimize(funct, x0, args=(in_dic,fun),\
                            method=self.method,jac = False,\
                            bounds=self.boundary,\
-                           #gtol = 1e-07*in_dic['n_point'],\
+                           gtol = 1e-09,\
                            constraints = self.cons,\
                            options={'maxiter':max(1000, 10*len(x0))})
         else:
