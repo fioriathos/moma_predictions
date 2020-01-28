@@ -2,6 +2,8 @@ import numpy as np
 from numba import jit,prange
 from copy import deepcopy
 import pandas as pd
+import time
+from pathos.multiprocessing import ProcessingPool as Pool
 ########################################################################################
 #############################INFERENCE METHODS##########################################
 ########################################################################################
@@ -78,9 +80,6 @@ def grad_new_mean_cov(b,B,F,A,a,grad_para,grad_mat_b):
     m_gamma = grad_para['a_gamma'] + fdgm('b_gamma')+np.dot(F_gamma,b)
     m_sl2 = fdgm('b_sl2')
     m_sm2 = fdgm('b_sm2')
-    m_sx02 = fdgm('b_sx02')
-    m_sl02 = fdgm('b_sl02')
-    m_k0 = fdgm('b_k0')
     #######################################################
     # Grad Q grad_mat['
     ######################################################
@@ -91,13 +90,8 @@ def grad_new_mean_cov(b,B,F,A,a,grad_para,grad_mat_b):
               + np.dot(F,np.dot(B,F_gamma.T))
     Q_sl2 = grad_para['A_sl2'] + fdgf('B_sl2')
     Q_sm2 = fdgf('B_sm2')
-    Q_sx02 = fdgf('B_sx02')
-    Q_sl02 = fdgf('B_sl02')
-    Q_k0 = fdgf('B_k0')
     return {'m_mlam':m_mlam,'m_gamma':m_gamma,'m_sl2':m_sl2,'m_sm2':m_sm2,\
-            'Q_mlam':Q_mlam,'Q_gamma':Q_gamma,'Q_sl2':Q_sl2,'Q_sm2':Q_sm2,\
-            'm_sx02':m_sx02,'m_k0':m_k0,'m_sl02':m_sl02,\
-            'Q_sx02':Q_sx02,'Q_k0':Q_k0,'Q_sl02':Q_sl02}
+            'Q_mlam':Q_mlam,'Q_gamma':Q_gamma,'Q_sl2':Q_sl2,'Q_sm2':Q_sm2}
 #
 def posteriori_matrices(x,m,Q,sm2):
     """    P(z_{t+dt}|D_{t+dt})=P(x_{t+dt}^m|z_{t+dt})P(z_{t+dt}|D_t)
@@ -145,9 +139,7 @@ def grad_posteriori_matrices(x,m,Q,sm2,grad_mat):
         return b_d
     b_sm2 = db('m_sm2','Q_sm2',1) + np.array([[m[0,0]/den],[0]])
     return {'B_gamma':dB('Q_gamma'),'B_mlam':dB('Q_mlam'),'B_sl2':dB('Q_sl2'),\
-            'B_sm2':B_sm2,'B_sx02':dB('Q_sx02'),'B_sl02':dB('Q_sl02'),'B_k0':dB('Q_k0'),\
-            'b_sm2':b_sm2,'b_sx02':db('m_sx02','Q_sx02'),'b_sl02':db('m_sl02','Q_sl02'),\
-            'b_k0':db('m_k0','Q_k0'),\
+            'B_sm2':B_sm2,'b_sm2':b_sm2,\
             'b_gamma':db('m_gamma','Q_gamma'),'b_mlam':db('m_mlam','Q_mlam'),'b_sl2':db('m_sl2','Q_sl2')}
 #
 def log_likelihood(x,m,Q,sm2):
@@ -155,7 +147,7 @@ def log_likelihood(x,m,Q,sm2):
     den = sm2+Q[0,0]
     # if den gets too small..
     #np.seterr(invalid='raise') # if log negative stop everything
-    assert den>0, "wrong state space Q[0,0] {} sm2 {}".format(Q[0,0],sm2)
+    assert den>0, "wrong state space Q[00]={} and sm2 + {}".format(Q[0,0],sm2)
     if den<1e-08:
         tmp = -(x-m[0,0])**2/(2*den)-0.5*(np.log(1e10*den)-np.log(1e10)+np.log(2*np.pi))
     else:
@@ -170,17 +162,12 @@ def grad_log_likelihood(x,m,Q,sm2,grad_mat):
         return   (x-m[0,0])*dm0/den\
                 +(x-m[0,0])**2/(2*den**2)*(dQ0+sd)\
                 -0.5/den*(dQ0+sd)
-    # grad order mlam, gamma, sl2, sm2, sx02, sl02, sk0
     return  np.array([[grad('m_mlam','Q_mlam')],\
                     [grad('m_gamma','Q_gamma')],\
                     [grad('m_sl2','Q_sl2')],\
-                    [grad('m_sm2','Q_sm2',1)],
-                    [grad('m_sx02','Q_sx02')],\
-                    [grad('m_sl02','Q_sl02')],\
-                    [grad('m_k0','Q_k0')],\
-                     ])
+                    [grad('m_sm2','Q_sm2',1)]])
 #------------------ OBJECTIVE OVER CELL CYCLE/ LANE AND TOTAL-----------------------------------
-def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,sx02,sl02,k0,dt,s,S,grad_matS,rescale):
+def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,grad_matS,rescale):
     """To check"""
     ##### likelihood and gradient at initial conditions
     ll = log_likelihood(W[0,0],s,S,sm2)
@@ -201,19 +188,13 @@ def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,sx02,sl02,k0,dt,s,S,grad_matS,rescale)
         ##### Likelihood
         ll += log_likelihood(W[0,j],m,Q,sm2)
         gll += grad_log_likelihood(W[0,j],m,Q,sm2,grad_mat_Q)
-    # Predict for daughter cell i.e. N[s,S]
+    # Predict for daughter cell
     m,Q = new_mean_cov(b,B,F,A,a)
-    ap = np.array([[-rescale*np.log(2)],[0]])
-    E = np.array([[sx02,k0],[k0,sl02]])
-    s = ap + m
-    S = E + Q
-    # And its gradients
     grad_mat_Q = grad_new_mean_cov(b,B,F,A,a,grad_param,grad_mat_b)
     # Find next cell initial conditions
-    grad_matS = {'m_sx02':np.array([[0],[0]]),'m_sl02':np.array([[0],[0]]),'m_k0':np.array([[0],[0]])}
-    grad_matS['Q_sx02'] = np.array([[1,0],[0,0]])
-    grad_matS['Q_sl02'] = np.array([[0,0],[0,1]])
-    grad_matS['Q_k0'] = np.array([[0,1],[1,0]])
+    s = np.array([[m[0,0]-rescale*np.log(2)],[m[1,0]]])
+    S = np.array([[Q[0,0],Q[0,1]],[Q[1,0],Q[1,1]]])
+    grad_matS = {}
     def gv(x):
         grad_matS['{}'.format(x)] = \
         np.array([[grad_mat_Q['{}'.format(x)][0,0]],[grad_mat_Q['{}'.format(x)][1,0]]])
@@ -225,7 +206,8 @@ def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,sx02,sl02,k0,dt,s,S,grad_matS,rescale)
     gm('Q_mlam');gm('Q_gamma');gm('Q_sl2');gm('Q_sm2')
     return -ll, -gll, s, S, grad_matS
 #
-def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,sx02,sl02,k0,S,s,dt,grad_matS,rescale):
+def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,\
+                   S,s,dt,grad_matS,rescale,nparr=False):
     """Compute the ll and gradient for 1 lane"""
     reind = deepcopy(reind_); dat = deepcopy(dat_)
     obj = 0; gobj = 0           # total objective and gradient
@@ -237,8 +219,7 @@ def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,sx02,sl02,k0,S,s,dt,grad_matS,
             s,S,grad_matS = dat[i][0] # Unpack initial conditions
         # Find ll over 1 cell cycle for 1 daughter
         tmp =\
-        obj_and_grad_1cc(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,sx02=sx02,\
-                         sl02=sl02,k0=k0,dt=dt,s=s,S=S,grad_matS=grad_matS,rescale=rescale) # calculate obj,gobj,p0 for one daugter
+        obj_and_grad_1cc(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,grad_matS=grad_matS,rescale=rescale) # calculate obj,gobj,p0 for one daugter
         obj += tmp[0]; gobj += tmp[1] #update obj, gobj
     # give the inital condition to the right cell lane
         if np.isnan(reind[i,0]) == False:
@@ -246,41 +227,48 @@ def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,sx02,sl02,k0,S,s,dt,grad_matS,
     #If the second cell exists do the same
         if np.sum(np.isnan(dat[i][1][1]))==0:
             tmp =\
-            obj_and_grad_1cc(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,sx02=sx02\
-                             ,sl02=sl02,k0=k0,dt=dt,s=s,S=S,grad_matS=grad_matS,rescale=rescale)
+            obj_and_grad_1cc(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,grad_matS=grad_matS,rescale=rescale)
             obj += tmp[0]; gobj += tmp[1]
             if np.isnan(reind[i,1]) == False:
                 dat[int(reind[i,1])][0] = tmp[2:]
     #Return obj and gradobj
-    return obj, gobj
+    if nparr:
+        return np.append(np.array([obj]),gobj)
+    else:
+        return obj, gobj
 #@jit(parallel=True)
-def grad_obj_total(mlam,gamma,sl2,sm2,sx02,sl02,k0,reind_v,dat_v,s,S,grad_matS,dt,rescale):
+#def grad_obj_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt,rescale):
+#    """Apply in parallel on all lane ID"""
+#    tot_obj = 0; tot_grad = 0
+#    for i in range(len(dat_v)):
+#        reind = reind_v[i]; dat = dat_v[i]
+#        obj, gobj =\
+#        grad_obj_1lane(reind,dat,mlam,gamma,sl2,sm2,S,s,dt,grad_matS,rescale)
+#        tot_obj += obj; tot_grad += gobj
+#    return tot_obj, tot_grad
+
+def grad_obj_total(mlam,gamma,sl2,sm2,reind_v,\
+                            dat_v,s,S,grad_matS,dt,rescale,nproc=10):
     """Apply in parallel on all lane ID"""
-    tot_obj = 0; tot_grad = 0
-    for i in range(len(dat_v)):
-        reind = reind_v[i]; dat = dat_v[i]
-        try:
-            obj, gobj =\
-            grad_obj_1lane(reind,dat,mlam,gamma,sl2,sm2,sx02,sl02,k0,S,s,dt,grad_matS,rescale)
-        except AssertionError:
-            print("mlam,gamma,sl2,sm2,sx02,sl02,k0",mlam,gamma,sl2,sm2,sx02,sl02,k0)
-            assert False
-        tot_obj += obj; tot_grad += gobj
-    return tot_obj, tot_grad
-#
-def pack_grad(gamma,sl2,in_dic):
-    """It's for testing, not necessary afterwards"""
-    return grad_obj_total(in_dic['s'][1,0],gamma,sl2,in_dic['sm2'],\
-                          in_dic['sx02'],in_dic['sl02'],in_dic['k0'],\
-                         in_dic['reind_v'],in_dic['dat_v'],in_dic['s'],\
-                          in_dic['S'],in_dic['grad_matS'],in_dic['dt'],in_dic['rescale'])
-#-------------------PREDICTIONS OVER CC/LANE AND TOTAL-----------------------------------------
-def predictions_1cc(W,mlam,gamma,sl2,sm2,sx02,sl02,k0,dt,s,S,rescale):
+    p = Pool(nproc)
+    fun = lambda x:\
+        grad_obj_1lane(x[0],x[1],mlam,gamma,sl2,sm2,S,s,dt,grad_matS,rescale,True)
+    ret = p.map(fun,zip(reind_v,dat_v))
+    ret = np.sum(np.vstack(ret),axis=0)
+    return ret[0],ret[1:]
+    #-------------------PREDICTIONS OVER CC/LANE AND TOTAL-----------------------------------------
+def grad_obj_wrap(x,in_dic):
+    mlam,gamma,sl2,sm2 = x
+    reind_v,dat_v,grad_matS,s,S,dt,lane_ID_v,val_v,rescale =\
+    in_dic['reind_v'],in_dic['dat_v'],in_dic['grad_matS'],in_dic['s'],in_dic['S'],in_dic['dt'],in_dic['lane_ID_v'],in_dic['val_v'],in_dic['rescale']
+    return grad_obj_total(mlam,gamma,sl2,sm2,reind_v, dat_v,s,S,grad_matS,dt,rescale,nproc=10)
+
+def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,rescale):
     """Return optiman length and growth (z) and std """
     z = []; err_z=[]
     #### Initialize parameters for recurrence
     F, A, a = parameters(gamma,dt,mlam,sl2)
-    ##### P(z_0|x_0^m)=N(b,B)
+    ##### P(z_0|x_0^m)
     b,B = posteriori_matrices(W[0,0],s,S,sm2)
     z.append(np.array(b)); err_z.append(np.sqrt(np.array([B[0,0],B[1,1]])))
     for j in range(1,W.shape[1]):
@@ -290,15 +278,14 @@ def predictions_1cc(W,mlam,gamma,sl2,sm2,sx02,sl02,k0,dt,s,S,rescale):
         b,B = posteriori_matrices(W[0,j],m,Q,sm2)
         ##### Optimal predicitons
         z.append(np.array(b)); err_z.append(np.sqrt(np.array([B[0,0],B[1,1]])))
-    # Find next cell intial distribution N(s,S) 
+    # Find next cell intial conditions
     m,Q = new_mean_cov(b,B,F,A,a)
-    ap = np.array([[-rescale*np.log(2)],[0]])
-    E = np.array([[sx02,k0],[k0,sl02]])
-    s = ap + m
-    S = E + Q
+    # Find next cell initial conditions
+    s = np.array([[m[0,0]-rescale*np.log(2)],[m[1,0]]])
+    S = np.array([[Q[0,0],Q[0,1]],[Q[1,0],Q[1,1]]])
     return z, err_z, s, S
 #
-def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,sx02,sl02,k0,S,s,dt,lane_ID,val,rescale):
+def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,val,rescale):
     """Return best_predictiona and error for every cell in form
     [laneID+id,[z,z_err]]"""
     from IPython.core.debugger import set_trace
@@ -312,7 +299,7 @@ def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,sx02,sl02,k0,S,s,dt,lane_ID
             s,S= dat[i][0] # Unpack initial conditions
         # Find prediction over 1 cell cycle for 1 daughter
         tmp =\
-        predictions_1cc(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,sx02=sx02,sl02=sl02,k0=k0,dt=dt,s=s,S=S,rescale=rescale)
+        predictions_1cc(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,rescale=rescale)
         z = tmp[0]; err_z = tmp[1]
         ret.append([lane_ID+'_'+str(val[i,1]),z,err_z])
         #print(np.mean(np.hstack(z).T[:,0]-dat[i][1][0]))
@@ -322,7 +309,7 @@ def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,sx02,sl02,k0,S,s,dt,lane_ID
     #If the second cell exists do the same
         if np.sum(np.isnan(dat[i][1][1]))==0:
             tmp =\
-            predictions_1cc(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,sx02=sx02,sl02=sl02,k0=k0,dt=dt,s=s,S=S,rescale=rescale)
+            predictions_1cc(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,rescale=rescale)
             z = tmp[0]; err_z = tmp[1]
             ret.append([lane_ID+'_'+str(val[i,2]),z,err_z])
             #print(np.mean(np.hstack(z).T[:,0]-dat[i][1][1]))
@@ -332,79 +319,57 @@ def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,sx02,sl02,k0,S,s,dt,lane_ID
     #Return obj and gradobj
     return ret
 #
-def prediction_total(mlam,gamma,sl2,sm2,sx02,sl02,k0,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale):
+#def prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale):
+#    """Apply in parallel on all lane ID and return a np.array"""
+#    tmp = []
+#    for i in range(len(dat_v)):
+#        reind = reind_v[i]; dat = dat_v[i]
+#        tmp.append(predictions_1lane(reind,dat,mlam,gamma,sl2,sm2,S,s,dt,lane_ID_v[i],val_v[i],rescale=rescale))
+#    # Return a nice behave np array with cell_ID, z[0],z[1],err_z[0],err_z[1]
+#    foo = []
+#    for lan in tmp:
+#        for cid in lan:
+#            foo.append(np.hstack((np.hstack([cid[0]]*len(cid[1]))[:,None],np.hstack(cid[1]).T,np.vstack(cid[2]))))
+#    return np.vstack(foo)
+def prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale,nproc=10):
     """Apply in parallel on all lane ID and return a np.array"""
-    tmp = []
-    for i in range(len(dat_v)):
-        reind = reind_v[i]; dat = dat_v[i]
-        tmp.append(predictions_1lane(reind,dat,mlam,gamma,sl2,sm2,sx02,sl02,k0,S,s,dt,lane_ID_v[i],val_v[i],rescale=rescale))
+    p = Pool(nproc)
+    fun = lambda x:\
+        predictions_1lane(x[0],x[1],mlam,gamma,sl2,sm2,S,s,dt,x[2],x[3],rescale)
+    tmp = p.map(fun,zip(reind_v,dat_v,lane_ID_v,val_v))
     # Return a nice behave np array with cell_ID, z[0],z[1],err_z[0],err_z[1]
     foo = []
     for lan in tmp:
         for cid in lan:
             foo.append(np.hstack((np.hstack([cid[0]]*len(cid[1]))[:,None],np.hstack(cid[1]).T,np.vstack(cid[2]))))
     return np.vstack(foo)
+def cost_function(x,in_dic,r2=True):
+    """Return the r2 between predicted and observed data"""
+    mlam,gamma,sl2,sm2 = x
+    reind_v,dat_v,vec_dat_v,s,S,dt,lane_ID_v,val_v,rescale =\
+    in_dic['reind_v'],in_dic['dat_v'],in_dic['vec_dat_v'],in_dic['s'],in_dic['S'],in_dic['dt'],in_dic['lane_ID_v'],in_dic['val_v'],in_dic['rescale']
+    predicted =\
+    prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale)[:,1:2]
+    # nan is used to keep same structure eventough we do not have gradient
+    if r2:
+        return\
+    1-np.sum((predicted.astype(np.float)-vec_dat_v)**2)/np.sum((vec_dat_v-np.mean(vec_dat_v))**2),\
+            np.array([np.nan,np.nan,np.nan,np.nan])
+    else:
+        return np.log(np.sum((predicted.astype(np.float)-vec_dat_v)**2)),\
+                np.array([np.nan,np.nan,np.nan,np.nan])
+
 def predict(min_dic, in_dic):
-    """It is just a wrapper to keep nice data structure where min_dic is the dict
+    """It is just a  = xwrapper to keep nice data structure where min_dic is the dict
     returned by minimize and in dic the one returned by build_data_strucure"""
     md = min_dic['best_param']
     return prediction_total(md['mlam'],md['gamma'],md['sl2'],md['sm2'],\
-                            md['sx02'],md['sl02'],md['k0'],\
                             in_dic['reind_v'],in_dic['dat_v'],in_dic['s'],\
                            in_dic['S'],in_dic['dt'],in_dic['lane_ID_v'],\
                             in_dic['val_v'],in_dic['rescale'])
-
 ################################################################################################
 ############################## DATA TREATEMENT #################################################
 ################################################################################################
-
-#------------------ ASYMMETRIC DIVISION DISTRIBUTION----------------------------------------
-def asym_dist_1lane(reind_,dat_,dt,rescale):
-    """Find the asymmetric distribution in log space for one lane"""
-    from scipy.stats import linregress
-    from copy import deepcopy
-    reind = deepcopy(reind_); dat = deepcopy(dat_)
-    distx0 = []; distlam = []; distk0 = []           # total objective and gradient
-    def pred_moth(i,j):
-        """Predict division length and growth rate. Do same for inital one"""
-        # Linear fit one cell cycle to estimate length mother and lenght daughter
-        W=dat[i][1][j].reshape(-1); t = np.arange(0,dt*len(W),dt)
-        tmp = linregress(t,W)
-        tmp1 = linregress(t[:4],W[:4])
-        tmp2 = linregress(t[:4],W[-4:])
-        if np.isnan(reind[i,j]) == False:
-            # predict cell lenght at division and el_rat
-            foo = np.append(t,t[-1]+dt/2)*tmp.slope+tmp.intercept
-            dat[int(reind[i,j])][0] = {'ml':foo[-1],'mlam':tmp2.slope}
-        return tmp.intercept, tmp1.slope #x0 and lambda
-    ## APPLY
-    for i in range(len(dat)):
-        # If cell doesn't have mother just predict length of daugther and save them
-        if type(dat[i][0])!=dict:
-            pred_moth(i,0);
-            if np.sum(np.isnan(dat[i][1][1]))==0:
-                pred_moth(i,1)
-        # If it does has a mother predict its length and save the log  difference betwee half of mother cell and daugther one
-        else:
-            x0,lam = pred_moth(i,0)
-            distx0.append(dat[i][0]['ml']-rescale*np.log(2)-x0)
-            distlam.append(dat[i][0]['mlam']-lam)
-            distk0.append([x0,lam])
-            if np.sum(np.isnan(dat[i][1][1]))==0:
-                x0,lam = pred_moth(i,1)
-                distx0.append(dat[i][0]['ml']-rescale*np.log(2)-x0)
-                distlam.append(dat[i][0]['mlam']-lam)
-                distk0.append([x0,lam])
-    return distx0, distlam, distk0
-def asym_dist(reind_v,dat_v,dt,rescale):
-    """Find the variance for the non symmetric division"""
-    distx0 = []; distlam = []; distk0 =[]
-    for i,j in enumerate(dat_v):
-        dx0 , dlam, dk0 = asym_dist_1lane(reind_v[i],dat_v[i],dt,rescale)
-        distx0.append(dx0); distlam.append(dlam); distk0.append(dk0)
-    flat = lambda dist: np.array([j for k in dist for j in k])
-    return flat(distx0),flat(distlam), flat(distk0)
-#-------------- MATRICES FORM ----------------------------------------
 def build_intial_mat(df,leng):
     """ Build the intiala matrix s,S and intial gradient grad_S """
     from scipy.stats import linregress
@@ -413,8 +378,7 @@ def build_intial_mat(df,leng):
         """Return slope (lambda), intercept (x0) and residuals (form sm2)"""
         t = t - t.iloc[0]
         r = linregress(t,y)
-        r1 = linregress(t[:4],y[:4]) # initial growth rate
-        return r1.slope,r.intercept, y-(r.intercept+t*r.slope)
+        return r.slope,r.intercept, y-(r.intercept+t*r.slope)
     G = df.groupby('cell').apply(lambda x: sleres(x.time_sec/60.,x['{}'.format(leng)]))
     G = np.vstack(G)
     lam = G[:,0]; x0 = G[:,1]; res = G[:,2]
@@ -423,12 +387,9 @@ def build_intial_mat(df,leng):
     ####### They do not depend on the parameters
     mat = np.zeros((2,2)); vec = np.zeros((2,1))
     grad_matS = {'m_mlam':vec,'m_gamma':vec,'m_sl2':vec,'m_sm2':vec,\
-                 'm_sx02':vec,'m_sl02':vec,'m_k0':vec,'Q_sx02':mat,\
-                 'Q_sl02':mat,'Q_k0':mat,\
                  'Q_mlam':mat,'Q_gamma':mat,'Q_sl2':mat,'Q_sm2':mat}
     s = np.array([[np.mean(x0)],[np.mean(lam)]])
-    S = np.array([[np.var(x0),np.var(np.dot(x0,lam))-np.mean(lam)*np.mean(x0)],[0,np.var(lam)]])
-    S[1,0] = S[0,1]
+    S = np.array([[np.var(x0),0],[0,np.var(lam)]])
     return s, S, grad_matS,sm2
 #
 def build_mat(mother,daugther,dfl,leng):
@@ -453,29 +414,42 @@ def who_goes_where(val):
     tmp2 = np.vstack(list(map(fun,tmp2)))
     return np.hstack([tmp1,tmp2])
 #
-def build_data_strucutre(df,leng,rescale,dt):
+def build_data_strucutre(df,leng,rescale):
     """Return for every lane the data with respective daughteres and initial conditions"""
+    #Sometimes cells with 1 data point are present and we don't want them
+    df = df.groupby('cell').filter(lambda x: x.values.shape[0]>1) #
+    dt = (df['time_sec'].iloc[1]-df['time_sec'].iloc[0])/60
+    assert dt == 3 or dt == 6, "look if dt make sense"
+    #rescae
     df['log_resc_'+leng] = np.log(df['{}'.format(leng)])*rescale
-    print("The variable to use is: log_resc_{}".format(leng))
-    s,S,grad_matS,sm2 = build_intial_mat(df,leng='log_resc_'+leng)
+    #print("The variable to use is: log_resc_{}".format(leng))
+    s,S,grad_matS,sm = build_intial_mat(df,leng='log_resc_'+leng)
 	#n_point = df.shape[0]
     n_point = df.shape[0]
     dat_v = []; reind_v = [];
     val_v = []; lane_ID_v = []
     for lid in df['lane_ID'].unique():
         dfl = df.loc[df['lane_ID']==lid] # select one lande id
-        daugther = [dfl.loc[df['parent_id']==k].id.unique() for k in dfl.parent_id.unique()] # find its daughters
+        daugther = [dfl.loc[dfl['parent_id']==k].id.unique() for k in dfl.parent_id.unique()] # find its daughters
         mothers = dfl.parent_id.unique() # respective mothers
         # Correct data strucutre
         val, dat = build_mat(mothers,daugther,dfl,'log_resc_'+leng)
         reind = who_goes_where(val)
         dat_v.append(dat); reind_v.append(reind)
         val_v.append(val); lane_ID_v.append(lid)
-    sx02,sl02,k0 = asym_dist(reind_v,dat_v,dt,rescale)
+    vec_dat_v = []
+    for k in dat_v:
+            for j in k:
+                vec_dat_v.append(j[1][0])
+                if np.any(np.isnan(j[1][1])):
+                    continue
+                else:
+                    vec_dat_v.append(j[1][1])
+    vec_dat_v = np.hstack(vec_dat_v).T
     return df,{'n_point':n_point,'dt':dt,'s':s,'S':S,'grad_matS':grad_matS,\
             'reind_v':reind_v,'dat_v':dat_v, 'val_v':val_v,\
-               'lane_ID_v':lane_ID_v,'rescale':rescale,'sm2':sm2,\
-               'sx02':np.var(sx02),'sl02':np.var(sl02),'k0':np.var(k0[:,0]*k0[:,1])-np.mean(k0[:,0])*np.mean(k0[:,1]) }
+               'lane_ID_v':lane_ID_v,'rescale':rescale,'sm2':sm,\
+              'vec_dat_v':vec_dat_v}
 #
 def merge_df_pred(df,pred_mat):
     """Merge the output from predict with the initial dataframe"""
@@ -498,20 +472,36 @@ def merge_df_pred(df,pred_mat):
     pd.concat([df.set_index(['cell_','sub_ind']),dft.set_index(['cell_','sub_ind'])],axis=1)
     dff = dff.reset_index()
     return dff.drop(['cell_','sub_ind'],axis=1)
+def find_best_lengths(files,pwd='/scicore/home/nimwegen/fiori/MoMA_predictions/predictions/',lengths=['length_um','length_erik','length_moma','length_raw','length_pixel']):
+    """Find best length measurment """
+    tmp=[]
+    for k in lengths:
+        df = pd.read_csv(pwd+files+'_'+k+'.csv')
+        err = np.mean(np.abs(df['err_growth_rate']/df['pred_growth_rate']))
+        tmp.append([files,k,err])
+    tmp = np.vstack(tmp)
+    return tmp[tmp[:,2]==min(tmp[:,2])]
 ################################################################################################
-############################### TO BE CANCELLED  ###############################################
+############################### The stocastics models  #########################################
 ################################################################################################
-def ornstein_uhlenbeck(mlam,gamma,sig,length=30,ncel=10,dt=3.):
-    mat = np.zeros((ncel,length))
-    dW = np.random.normal(loc=mat,scale=np.sqrt(dt))
-    mat[:,0]=mlam+sig*dW[:,0]
-    for k in range(1,length):
-        mat[:,k]=mat[:,k-1]-gamma*(mat[:,k-1]-mlam)*dt+sig*dW[:,k-1]
-    return mat
-def integrated_ou(mlam,gamma,sig,sigm2,X0=1,sx0=0.1,length=30,ncel=10,dt=3.):
-    X = ornstein_uhlenbeck(mlam,gamma,sig,length,ncel,dt)
+def ornstein_uhlenbeck(mlam,gamma,sl2,length=30,ncel=10,dt=3.,dtsim=1):
+    sam = dt/dtsim
+    lengthsim = length*sam
+    assert (sam).is_integer(), "not sam integer"
+    assert (lengthsim).is_integer(), "no lan integer"
+    sam = int(sam); lengthsim=int(lengthsim)
+    mat = np.zeros((ncel,lengthsim))
+    sig = np.sqrt(sl2)
+    dW = np.random.normal(loc=mat,scale=np.sqrt(dtsim))
+    add = sig*dW*dtsim
+    mat[:,0]=add[:,0]+mlam
+    for k in range(1,lengthsim):
+        mat[:,k]=mat[:,k-1]-gamma*(mat[:,k-1]-mlam)*dtsim+add[:,k]
+    return mat[:,::sam]
+def integrated_ou(mlam,gamma,sl2,sm2,X0=1,sx0=0.1,length=30,ncel=10,dt=3.,dtsim=1):
+    X = ornstein_uhlenbeck(mlam,gamma,sl2,length,ncel,dt,dtsim)
     X0 = np.random.normal(loc=np.ones((ncel,1)),scale=sx0)
-    return np.random.normal(loc=np.hstack([X0,np.cumsum(X,axis=1)*dt+X0]),scale=np.sqrt(sigm2))[:,:-1], X
+    return np.random.normal(loc=np.hstack([X0,np.cumsum(X,axis=1)*dt+X0]),scale=np.sqrt(sm2))[:,:-1], X
 def W_er(st): 
     diffW= abs(W-z[0,:])
     percW = sum(sum(diffW>st*err_z[0,:]))/diffW.shape[1]

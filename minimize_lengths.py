@@ -1,11 +1,12 @@
 import numpy as np
 import recursive_lengths as rl
 import imp
+import time
 imp.reload(rl)
 class minimize_lengths(object):
     """Do minimization on """
     def __init__(self, free,fixed={},\
-                 method='L-BFGS-B',regularize=None,boundary=None):
+                 method='L-BFGS-B',boundary=None):
         """These 3 dictionary fixed the free param, constrained param, boundary"""
         assert type(fixed)==dict
         assert type(free)==dict;assert free!={}
@@ -13,22 +14,17 @@ class minimize_lengths(object):
         self.cons=None #constraints
         self.method = method
         self.boundary = boundary
-        self.regularize = regularize #Parameter of regularization
         if boundary==None: # Only positive values allowed
-            self.boundary = [(0,None)]*len(free)
+            self.boundary = [(1e-13,None)]*len(free)
         #Check all keys are either fixed or not
         assert set(fixed.keys())|set((free.keys()))==set(('sm2', 'sl2',\
-                                                          'gamma','m_lam',\
-                                                         'sx02','sl02','k0'))
+                                                          'gamma','m_lam'))
         # Fix them as model parameters
         def set_att(key,val):
             if key=='gamma':self.gamma=val
             if key=='sl2':self.sl2=val
             if key=='sm2':self.sm2=val
             if key=='m_lam':self.m_lam=val
-            if key=='sx02': self.sx02=val
-            if key=='sl02': self.sl02=val
-            if key=='k0': self.k0=val
         #set attributes
         for key,val in free.items():
             set_att(key,val)
@@ -38,11 +34,7 @@ class minimize_lengths(object):
         """From np.array vec divide in array the non fixed and dict the fix by giving fixed"""
         from collections import OrderedDict
         vecout = {}
-        tmp = OrderedDict([('m_lam',vec[0]),('gamma',vec[1]),\
-                           ('sl2',vec[2]),('sm2',vec[3]),\
-                           ('sx02',vec[4]),('sl02',vec[5]),\
-                           ('k0',vec[6])
-                          ])
+        tmp = OrderedDict([('m_lam',vec[0]),('gamma',vec[1]),( 'sl2',vec[2]),( 'sm2',vec[3])])
         for key in kwargs:
             vecout[key]=tmp[key]
             del tmp[key]
@@ -50,9 +42,7 @@ class minimize_lengths(object):
     def rebuild_param(self,vec,**kwargs):
         """ Inverse operation than fix_par"""
         from collections import OrderedDict
-        tmp = OrderedDict([( 'm_lam',None),('gamma',None),( 'sl2',None),\
-                           ( 'sm2',None),( 'sx02',None),( 'sl02',None),\
-                           ( 'k0',None)])
+        tmp = OrderedDict([( 'm_lam',None),('gamma',None),( 'sl2',None),( 'sm2',None)])
         for key,val in kwargs.items():
             assert val!=None, "Can't have None as fixed values"
             tmp[key]=val
@@ -61,29 +51,31 @@ class minimize_lengths(object):
                 tmp[key]=vec[0]
                 vec = np.delete(vec,0)
         return np.array([tmp[key] for key in tmp])
-    def tot_objective(self,x,in_dic):
+    def tot_objective(self,x,in_dic,fun=rl.grad_obj_wrap,reg=None):
         """Give obj and grad giving initial conditions and data"""
-        m_lam,gamma,sl2,sm2,sx02,sl02,k0 = x
-        reind_v = in_dic['reind_v']; dt = in_dic['dt']
-        dat_v = in_dic['dat_v']; s = in_dic['s']; rescale = in_dic['rescale']
-        S = in_dic['S']; grad_matS = in_dic['grad_matS']
-        obj, grad = \
-    rl.grad_obj_total(m_lam,gamma,sl2,sm2,sx02,sl02,k0,reind_v,dat_v,s,S,grad_matS,dt,rescale)
-        if self.regularize is None:
+        obj, grad = fun(x,in_dic)
+        if reg is None:
             return obj,grad
         else:
-            #Ridge regression for gamma param i.e. prior normal with variance
+            #Ridge regression for sigmal param i.e. prior normal with variance
             # 1/sqrt(regularize)
-            obj += self.regularize*x[1]**2
-            grad[1] += 2*self.regularize*x[1]
-            return obj, grad
-    def tot_grad_obj(self,x0,in_dic):
+            obj += reg*(x[1]**2+x[2]**2)
+            grad[1] += 2*reg*x[1]
+            grad[2] += 2*reg*x[2]
+            return obj, grad 
+    def tot_grad_obj(self,x0,in_dic,fun=rl.grad_obj_wrap,reg=None):
         """Return total obj and grad depending on the x0 np.array"""
         # From the reduced x0 rebuild entire vector and compute obj and grad
-        tmp = self.tot_objective(self.rebuild_param(x0,**self.fixed),in_dic)
+        #ts = time.time()
+        tmp =\
+        self.tot_objective(self.rebuild_param(x0,**self.fixed),in_dic,fun,reg)
         obj = tmp[0]
         # return the sliced grad
-        grad =self.fix_par(tmp[1], **self.fixed)[0]
+        grad =self.fix_par(tmp[1], **self.fixed)[0] 
+        #print(time.time()-ts)
+        #RESCALE LOG LIKELIHOOD IN ORDER TO HAVE MORE SUITABLE NUMBERS
+        obj = obj/in_dic['n_point']
+        grad = grad/in_dic['n_point']
         return obj,grad.reshape(-1)
     def initialize(self):
         """Return the x np array"""
@@ -93,40 +85,41 @@ class minimize_lengths(object):
             if i=='gamma':x0[1]=self.free[i]
             if i=='sl2':x0[2]=self.free[i]
             if i=='sm2':x0[3]=self.free[i]
-            if i=='sx02':x0[4]=self.free[i]
-            if i=='sl02':x0[5]=self.free[i]
-            if i=='k0':x0[6]=self.free[i]
         x0 = [x for x in x0 if x is not None]
         return np.array(x0)
-    def minimize_both_vers(self,in_dic,x0=None,numerical=False):
+    def minimize_both_vers(self,in_dic,x0=None,numerical=False,fun=rl.grad_obj_wrap,reg=None):
         """Minimize module.tot_grad_obj(t,path) at point x0={mu:,sigmas,..} considering dic['fix]={mu:,..}"""
         from scipy.optimize import minimize
         # Initialize intial condition for first time
         if x0 is None:
             x0 = self.initialize()
-
-        fun = lambda x: self.tot_grad_obj(x0=x,in_dic=in_dic)
+        if fun==rl.cost_function:
+            assert numerical==True, "no gradient for cost fun"
         if numerical:
-            tmp = minimize(self.tot_grad_obj, x0, args=(in_dic),\
+            funct = lambda x,y,z:\
+                self.tot_grad_obj(x0=x,in_dic=y,fun=z,reg=reg)[0]
+            tmp = minimize(funct, x0, args=(in_dic,fun),\
                            method=self.method,jac = False,\
                            bounds=self.boundary,\
-                           #gtol = 1e-07*in_dic['n_point'],\
+                           gtol = 1e-09,\
                            constraints = self.cons,\
                            options={'maxiter':max(1000, 10*len(x0))})
         else:
             #print "SOMETIMES PROBLEMS WITH ANALYTICAL GRADIENT"
-            tmp = minimize(self.tot_grad_obj, x0, args=(in_dic),\
+            tmp = minimize(self.tot_grad_obj, x0, args=(in_dic,fun,reg),\
                            method=self.method,jac = True,\
                            bounds=self.boundary,\
                            constraints = self.cons,\
                            #gtol = 1e-07*in_dic['n_point'],\
                            options={'maxiter':max(1000, 10*len(x0))})
         total_par = self.rebuild_param(tmp['x'],**self.fixed)
-        lik_grad = self.tot_grad_obj(x0=tmp['x'],in_dic=in_dic)
+        lik_grad = tmp['fun']
         return tmp,total_par,lik_grad
-    def minimize(self,in_dic, x0=None):
+    def minimize(self,in_dic, x0=None, numerical=False,\
+                 fun=rl.grad_obj_wrap,reg=None):
         """Use Analytical gradient until it workds. Then use numerical in case"""
-        tmp,total_par,lik_grad = self.minimize_both_vers(in_dic=in_dic,numerical=False,x0=x0)
+        tmp,total_par,lik_grad =\
+        self.minimize_both_vers(in_dic=in_dic,numerical=numerical,x0=x0,fun=fun,reg=reg)
         tt = self.tot_objective(total_par,in_dic)
         ret = {}
         ret['log_lik'] = -tmp['fun']
@@ -138,12 +131,44 @@ class minimize_lengths(object):
                             'gamma':total_par[1],\
                             'sl2':total_par[2],\
                             'sm2':total_par[3],\
-                            'sx02':total_par[4],\
-                            'sl02':total_par[5],\
-                            'k0':total_par[6],\
                             }
-        assert tmp['message']==True, 'wrong minimization'
+        if tmp['status']:
+            self.m_lam = total_par[0]
+            self.gamma = total_par[1]
+            self.sl2= total_par[2]
+            self.sm2= total_par[3]
         return ret
+    def gradient_descent(self,in_dic,eta=1e-06,runtime=10000,x0=None\
+                         ,show=False,fun=rl.grad_obj_wrap,reg=None):
+        if x0 is None:
+            theta = self.initialize()
+        else:
+            theta=x0
+        for k in range(runtime):
+            _ , grtheta = self.tot_grad_obj(x0=theta,in_dic=in_dic,\
+                              fun=fun,reg=reg)
+            vt = eta*grtheta
+            theta = theta-vt
+            if show:
+                print('objective',_,theta)
+        return theta,_
+    def ADAM(self,in_dic,b1=0.9,b2=0.99,eta=1e-03,eps=1e-10,runtime=10000,x0=None,show=False):
+        if x0 is None:
+            theta = self.initialize()
+        else:
+            theta=x0
+        mt=st=0
+        for k in range(1,runtime):
+            _ , gt =  self.tot_grad_obj(x0=theta,in_dic=in_dic,par=True)
+            mt =b1*mt+(1-b1)*gt
+            st = b2*st+(1-b2)*np.power(gt,2)
+            mh = mt/(1-b1**k)
+            sh = st/(1-b2**k)
+            if show:
+                print('objective',_)
+            theta = theta-eta*mh/(np.sqrt(sh)+eps)
+        return theta,_
+ 
         #if tmp['success']==False:
         #    print("Probably a problem with gradient, do numerical")
         #    tmp,total_par,lik_grad = self.minimize_both_vers(in_dic=in_dic,x0=tmp['x'],numerical=True)
@@ -229,7 +254,7 @@ class minimize_lengths(object):
 #        gpy = self.return_model()
 #        H = gpy.multiproc_hessian(self.time,self.path,self.nproc,\
 #                                  self.lamb1,self.lamb2,normalized)
-#        return H
+#        return H 
 #    def predict(self,alpha):
 #        """predict paths with used alpha scaling"""
 #        gpy = self.return_model()
