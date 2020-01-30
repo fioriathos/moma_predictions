@@ -61,7 +61,6 @@ def grad_parameters(gamma,dt,mlam,sl2):
     A_gamma[0,1] = sl2/2*(2*(1-emg)/gamma**2*dt*emg-2/gamma**3*(1-emg)**2)
     A_gamma[1,0] = A_gamma[0,1]
     return {'F_gamma':F_gamma,'a_mlam':a_mlam,'a_gamma':a_gamma,'A_sl2':A_sl2,'A_gamma':A_gamma}
-#
 def new_mean_cov(b, B,F,A,a):
     """Start from P(z_t|D_t)= N(b;B) and find P(z_{t+dt}|D_t) =
     N(a+Fb;A+FBF.T):= N(m,Q)  """
@@ -92,7 +91,6 @@ def grad_new_mean_cov(b,B,F,A,a,grad_para,grad_mat_b):
     Q_sm2 = fdgf('B_sm2')
     return {'m_mlam':m_mlam,'m_gamma':m_gamma,'m_sl2':m_sl2,'m_sm2':m_sm2,\
             'Q_mlam':Q_mlam,'Q_gamma':Q_gamma,'Q_sl2':Q_sl2,'Q_sm2':Q_sm2}
-#
 def posteriori_matrices(x,m,Q,sm2):
     """    P(z_{t+dt}|D_{t+dt})=P(x_{t+dt}^m|z_{t+dt})P(z_{t+dt}|D_t)
     =N(x_{t+dt},sm2)N(m,Q)=N(b',B') """
@@ -141,7 +139,6 @@ def grad_posteriori_matrices(x,m,Q,sm2,grad_mat):
     return {'B_gamma':dB('Q_gamma'),'B_mlam':dB('Q_mlam'),'B_sl2':dB('Q_sl2'),\
             'B_sm2':B_sm2,'b_sm2':b_sm2,\
             'b_gamma':db('m_gamma','Q_gamma'),'b_mlam':db('m_mlam','Q_mlam'),'b_sl2':db('m_sl2','Q_sl2')}
-#
 def log_likelihood(x,m,Q,sm2):
     """Return P(x_{t+dt}|D_t) in log """
     den = sm2+Q[0,0]
@@ -167,7 +164,34 @@ def grad_log_likelihood(x,m,Q,sm2,grad_mat):
                     [grad('m_sl2','Q_sl2')],\
                     [grad('m_sm2','Q_sm2',1)]])
 #------------------ OBJECTIVE OVER CELL CYCLE/ LANE AND TOTAL-----------------------------------
-def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,grad_matS,rescale):
+def cell_division_likelihood_and_grad(m,Q,grad_mat_Q,sd2,rescale,grad=True):
+    """Cell division likelihood and gradient after asymmetric cell division with
+    std=sqrt(sd2)"""
+    pref_l = (Q[0,1]**2-Q[1,1]*(Q[0,0]+sd2))
+    pref_r = (4*Q[0,1]**2-Q[1,1]*(Q[0,0]+sd2))
+    pref = pref_l/pref_r
+    S = np.array([[Q[0,0]+sd2,2*Q[0,1]],[2*Q[0,1],Q[1,1]]])*pref
+    s = np.array([[m[0,0]-rescale*np.log(2)],[m[1,0]]])
+    grad_matS = {}
+    def gm(x):
+        GQ = grad_mat_Q['{}'.format(x)]
+        gpref_l = 2*Q[0,1]*GQ[0,1]-GQ[1,1]*(Q[0,0]+sd2)-Q[1,1]*GQ[0,0]
+        gpref_r = 8*Q[0,1]*GQ[0,1]-GQ[1,1]*(Q[0,0]+sd2)-Q[1,1]*GQ[0,0]
+        gpref = (gpref_l*pref_r-pref_l*gpref_r)/(pref_r**2)
+        grad_matS['{}'.format(x)] = \
+                np.array([[Q[0,0]+sd2,2*Q[0,1]],[2*Q[0,1],Q[1,1]]])*gpref+\
+                np.array([[GQ[0,0],2*GQ[0,1]],[2*GQ[0,1],GQ[1,1]]])*pref
+    def gv(x):
+        mat = grad_mat_Q['{}'.format(x)]
+        grad_matS['{}'.format(x)] = \
+        np.array([[mat[0,0]],[mat[1,0]]])
+    if grad:
+        gv('m_mlam');gv('m_gamma');gv('m_sl2');gv('m_sm2')
+        gm('Q_mlam');gm('Q_gamma');gm('Q_sl2');gm('Q_sm2')
+        return s, S, grad_matS
+    else:
+        return s,S
+def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,grad_matS,rescale,sd2):
     """To check"""
     ##### likelihood and gradient at initial conditions
     ll = log_likelihood(W[0,0],s,S,sm2)
@@ -191,23 +215,11 @@ def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,grad_matS,rescale):
     # Predict for daughter cell
     m,Q = new_mean_cov(b,B,F,A,a)
     grad_mat_Q = grad_new_mean_cov(b,B,F,A,a,grad_param,grad_mat_b)
-    # Find next cell initial conditions
-    s = np.array([[m[0,0]-rescale*np.log(2)],[m[1,0]]])
-    S = np.array([[Q[0,0],Q[0,1]],[Q[1,0],Q[1,1]]])
-    grad_matS = {}
-    def gv(x):
-        grad_matS['{}'.format(x)] = \
-        np.array([[grad_mat_Q['{}'.format(x)][0,0]],[grad_mat_Q['{}'.format(x)][1,0]]])
-    def gm(x):
-        mat = grad_mat_Q['{}'.format(x)]
-        grad_matS['{}'.format(x)] = \
-        np.array([[mat[0,0],mat[0,1]],[mat[1,0],mat[1,1]]])
-    gv('m_mlam');gv('m_gamma');gv('m_sl2');gv('m_sm2')
-    gm('Q_mlam');gm('Q_gamma');gm('Q_sl2');gm('Q_sm2')
+    # Find next cell initial conditions (9% asym div)
+    s, S, grad_matS = cell_division_likelihood_and_grad(m,Q,grad_mat_Q,sd2,rescale)
     return -ll, -gll, s, S, grad_matS
-#
 def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,\
-                   S,s,dt,grad_matS,rescale,nparr=False):
+                   S,s,dt,grad_matS,rescale,sd2,nparr=False):
     """Compute the ll and gradient for 1 lane"""
     reind = deepcopy(reind_); dat = deepcopy(dat_)
     obj = 0; gobj = 0           # total objective and gradient
@@ -219,7 +231,7 @@ def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,\
             s,S,grad_matS = dat[i][0] # Unpack initial conditions
         # Find ll over 1 cell cycle for 1 daughter
         tmp =\
-        obj_and_grad_1cc(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,grad_matS=grad_matS,rescale=rescale) # calculate obj,gobj,p0 for one daugter
+        obj_and_grad_1cc(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,grad_matS=grad_matS,rescale=rescale,sd2=sd2) # calculate obj,gobj,p0 for one daugter
         obj += tmp[0]; gobj += tmp[1] #update obj, gobj
     # give the inital condition to the right cell lane
         if np.isnan(reind[i,0]) == False:
@@ -227,7 +239,7 @@ def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,\
     #If the second cell exists do the same
         if np.sum(np.isnan(dat[i][1][1]))==0:
             tmp =\
-            obj_and_grad_1cc(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,grad_matS=grad_matS,rescale=rescale)
+            obj_and_grad_1cc(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,grad_matS=grad_matS,rescale=rescale,sd2=sd2)
             obj += tmp[0]; gobj += tmp[1]
             if np.isnan(reind[i,1]) == False:
                 dat[int(reind[i,1])][0] = tmp[2:]
@@ -236,34 +248,29 @@ def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,\
         return np.append(np.array([obj]),gobj)
     else:
         return obj, gobj
-#@jit(parallel=True)
-#def grad_obj_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,grad_matS,dt,rescale):
-#    """Apply in parallel on all lane ID"""
-#    tot_obj = 0; tot_grad = 0
-#    for i in range(len(dat_v)):
-#        reind = reind_v[i]; dat = dat_v[i]
-#        obj, gobj =\
-#        grad_obj_1lane(reind,dat,mlam,gamma,sl2,sm2,S,s,dt,grad_matS,rescale)
-#        tot_obj += obj; tot_grad += gobj
-#    return tot_obj, tot_grad
-
 def grad_obj_total(mlam,gamma,sl2,sm2,reind_v,\
-                            dat_v,s,S,grad_matS,dt,rescale,nproc=10):
+                            dat_v,s,S,grad_matS,dt,rescale,sd2,nproc=10):
     """Apply in parallel on all lane ID"""
     p = Pool(nproc)
     fun = lambda x:\
-        grad_obj_1lane(x[0],x[1],mlam,gamma,sl2,sm2,S,s,dt,grad_matS,rescale,True)
+        grad_obj_1lane(x[0],x[1],mlam,gamma,sl2,sm2,S,s,dt,grad_matS,rescale,sd2,True)
     ret = p.map(fun,zip(reind_v,dat_v))
     ret = np.sum(np.vstack(ret),axis=0)
     return ret[0],ret[1:]
     #-------------------PREDICTIONS OVER CC/LANE AND TOTAL-----------------------------------------
 def grad_obj_wrap(x,in_dic):
     mlam,gamma,sl2,sm2 = x
-    reind_v,dat_v,grad_matS,s,S,dt,lane_ID_v,val_v,rescale =\
-    in_dic['reind_v'],in_dic['dat_v'],in_dic['grad_matS'],in_dic['s'],in_dic['S'],in_dic['dt'],in_dic['lane_ID_v'],in_dic['val_v'],in_dic['rescale']
-    return grad_obj_total(mlam,gamma,sl2,sm2,reind_v, dat_v,s,S,grad_matS,dt,rescale,nproc=10)
-
-def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,rescale):
+    reind_v,dat_v,grad_matS,s,S,dt,lane_ID_v,val_v,rescale,sd2 =\
+    in_dic['reind_v'],in_dic['dat_v'],in_dic['grad_matS'],in_dic['s'],in_dic['S'],in_dic['dt'],in_dic['lane_ID_v'],in_dic['val_v'],in_dic['rescale'],in_dic['sd2']
+    return grad_obj_total(mlam,gamma,sl2,sm2,reind_v,\
+                          dat_v,s,S,grad_matS,dt,rescale,sd2,nproc=10)
+#-------------------PREDICTIONS-------------------------- 
+def inverse(A): 
+    """Inverse a 2x2 matrix"""
+    assert A.shape==(2,2)
+    return np.array([[A[1,1],-A[0,1]],[-A[1,0],A[0,0]]])\
+            /(A[0,0]*A[1,1]-A[0,1]*A[1,0])
+def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,rescale,sd2):
     """Return optiman length and growth (z) and std """
     z = []; err_z=[]
     #### Initialize parameters for recurrence
@@ -276,16 +283,15 @@ def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,rescale):
         m,Q = new_mean_cov(b,B,F,A,a)
         ##### P(z_{t+dt}|D_{t+dt}) = N(b',B')
         b,B = posteriori_matrices(W[0,j],m,Q,sm2)
-        ##### Optimal predicitons
-        z.append(np.array(b)); err_z.append(np.sqrt(np.array([B[0,0],B[1,1]])))
+        ##### Optimal predicitons 
+        InvB = inverse(B)
+        z.append(np.array(b)); err_z.append(np.sqrt(np.array([InvB[0,0],InvB[1,1]])))
     # Find next cell intial conditions
     m,Q = new_mean_cov(b,B,F,A,a)
     # Find next cell initial conditions
-    s = np.array([[m[0,0]-rescale*np.log(2)],[m[1,0]]])
-    S = np.array([[Q[0,0],Q[0,1]],[Q[1,0],Q[1,1]]])
+    s,S= cell_division_likelihood_and_grad(m,Q,grad_mat_Q,sd2,rescale,grad=False)
     return z, err_z, s, S
-#
-def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,val,rescale):
+def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,val,rescale,sd2):
     """Return best_predictiona and error for every cell in form
     [laneID+id,[z,z_err]]"""
     from IPython.core.debugger import set_trace
@@ -299,7 +305,7 @@ def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,val,rescale)
             s,S= dat[i][0] # Unpack initial conditions
         # Find prediction over 1 cell cycle for 1 daughter
         tmp =\
-        predictions_1cc(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,rescale=rescale)
+        predictions_1cc(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,rescale=rescale,sd2=sd2)
         z = tmp[0]; err_z = tmp[1]
         ret.append([lane_ID+'_'+str(val[i,1]),z,err_z])
         #print(np.mean(np.hstack(z).T[:,0]-dat[i][1][0]))
@@ -309,7 +315,7 @@ def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,val,rescale)
     #If the second cell exists do the same
         if np.sum(np.isnan(dat[i][1][1]))==0:
             tmp =\
-            predictions_1cc(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,rescale=rescale)
+            predictions_1cc(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,rescale=rescale,sd2=sd2)
             z = tmp[0]; err_z = tmp[1]
             ret.append([lane_ID+'_'+str(val[i,2]),z,err_z])
             #print(np.mean(np.hstack(z).T[:,0]-dat[i][1][1]))
@@ -318,24 +324,11 @@ def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,val,rescale)
         #set_trace()
     #Return obj and gradobj
     return ret
-#
-#def prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale):
-#    """Apply in parallel on all lane ID and return a np.array"""
-#    tmp = []
-#    for i in range(len(dat_v)):
-#        reind = reind_v[i]; dat = dat_v[i]
-#        tmp.append(predictions_1lane(reind,dat,mlam,gamma,sl2,sm2,S,s,dt,lane_ID_v[i],val_v[i],rescale=rescale))
-#    # Return a nice behave np array with cell_ID, z[0],z[1],err_z[0],err_z[1]
-#    foo = []
-#    for lan in tmp:
-#        for cid in lan:
-#            foo.append(np.hstack((np.hstack([cid[0]]*len(cid[1]))[:,None],np.hstack(cid[1]).T,np.vstack(cid[2]))))
-#    return np.vstack(foo)
-def prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale,nproc=10):
+def prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale,sd2,nproc=10):
     """Apply in parallel on all lane ID and return a np.array"""
     p = Pool(nproc)
     fun = lambda x:\
-        predictions_1lane(x[0],x[1],mlam,gamma,sl2,sm2,S,s,dt,x[2],x[3],rescale)
+        predictions_1lane(x[0],x[1],mlam,gamma,sl2,sm2,S,s,dt,x[2],x[3],rescale,sd2)
     tmp = p.map(fun,zip(reind_v,dat_v,lane_ID_v,val_v))
     # Return a nice behave np array with cell_ID, z[0],z[1],err_z[0],err_z[1]
     foo = []
@@ -349,7 +342,7 @@ def cost_function(x,in_dic,r2=True):
     reind_v,dat_v,vec_dat_v,s,S,dt,lane_ID_v,val_v,rescale =\
     in_dic['reind_v'],in_dic['dat_v'],in_dic['vec_dat_v'],in_dic['s'],in_dic['S'],in_dic['dt'],in_dic['lane_ID_v'],in_dic['val_v'],in_dic['rescale']
     predicted =\
-    prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale)[:,1:2]
+    prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale,sd2)[:,1:2]
     # nan is used to keep same structure eventough we do not have gradient
     if r2:
         return\
@@ -358,7 +351,6 @@ def cost_function(x,in_dic,r2=True):
     else:
         return np.log(np.sum((predicted.astype(np.float)-vec_dat_v)**2)),\
                 np.array([np.nan,np.nan,np.nan,np.nan])
-
 def predict(min_dic, in_dic):
     """It is just a  = xwrapper to keep nice data structure where min_dic is the dict
     returned by minimize and in dic the one returned by build_data_strucure"""
@@ -366,7 +358,7 @@ def predict(min_dic, in_dic):
     return prediction_total(md['mlam'],md['gamma'],md['sl2'],md['sm2'],\
                             in_dic['reind_v'],in_dic['dat_v'],in_dic['s'],\
                            in_dic['S'],in_dic['dt'],in_dic['lane_ID_v'],\
-                            in_dic['val_v'],in_dic['rescale'])
+                            in_dic['val_v'],in_dic['rescale'],in_dic['sd2'])
 ################################################################################################
 ############################## DATA TREATEMENT #################################################
 ################################################################################################
@@ -446,10 +438,11 @@ def build_data_strucutre(df,leng,rescale):
                 else:
                     vec_dat_v.append(j[1][1])
     vec_dat_v = np.hstack(vec_dat_v).T
+    #asym division equal to 0.1 cv
     return df,{'n_point':n_point,'dt':dt,'s':s,'S':S,'grad_matS':grad_matS,\
             'reind_v':reind_v,'dat_v':dat_v, 'val_v':val_v,\
                'lane_ID_v':lane_ID_v,'rescale':rescale,'sm2':sm,\
-              'vec_dat_v':vec_dat_v}
+               'vec_dat_v':vec_dat_v,'sd2':(0.1*rescale*np.log(2))**2}
 #
 def merge_df_pred(df,pred_mat):
     """Merge the output from predict with the initial dataframe"""
@@ -521,4 +514,4 @@ if  __name__=="__main__":
     print(time.time()-t1)
     #z, err_z,_,_ = predictions_1cc(W,mlam=1.,gamma=0.02,sig_l_s=.03**4,sig_m_s=0.08,dt=3.,m0=m0,M0=M0)
     #print(W_er(1),W_er(2))
-    #print(X_er(1),X_er(2))
+    print(X_er(1),X_er(2))
