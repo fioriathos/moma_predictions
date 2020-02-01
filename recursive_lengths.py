@@ -284,12 +284,12 @@ def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,rescale,sd2):
         ##### P(z_{t+dt}|D_{t+dt}) = N(b',B')
         b,B = posteriori_matrices(W[0,j],m,Q,sm2)
         ##### Optimal predicitons 
-        InvB = inverse(B)
-        z.append(np.array(b)); err_z.append(np.sqrt(np.array([InvB[0,0],InvB[1,1]])))
+        #InvB = inverse(B)
+        z.append(np.array(b)); err_z.append(np.sqrt(np.array([B[0,0],B[1,1]])))
     # Find next cell intial conditions
     m,Q = new_mean_cov(b,B,F,A,a)
     # Find next cell initial conditions
-    s,S= cell_division_likelihood_and_grad(m,Q,grad_mat_Q,sd2,rescale,grad=False)
+    s,S= cell_division_likelihood_and_grad(m,Q,None,sd2,rescale,grad=False)
     return z, err_z, s, S
 def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,val,rescale,sd2):
     """Return best_predictiona and error for every cell in form
@@ -324,18 +324,30 @@ def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,val,rescale,
         #set_trace()
     #Return obj and gradobj
     return ret
+#def prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale,sd2,nproc=10):
+#    """Apply in parallel on all lane ID and return a np.array"""
+#    p = Pool(nproc)
+#    fun = lambda x:\
+#        predictions_1lane(x[0],x[1],mlam,gamma,sl2,sm2,S,s,dt,x[2],x[3],rescale,sd2)
+#    tmp = p.map(fun,zip(reind_v,dat_v,lane_ID_v,val_v))
+#    # Return a nice behave np array with cell_ID, z[0],z[1],err_z[0],err_z[1]
+#    foo = []
+#    for lan in tmp:
+#        for cid in lan:
+#            foo.append(np.hstack((np.hstack([cid[0]]*len(cid[1]))[:,None],np.hstack(cid[1]).T,np.vstack(cid[2]))))
+#    return np.vstack(foo)
 def prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale,sd2,nproc=10):
     """Apply in parallel on all lane ID and return a np.array"""
-    p = Pool(nproc)
-    fun = lambda x:\
-        predictions_1lane(x[0],x[1],mlam,gamma,sl2,sm2,S,s,dt,x[2],x[3],rescale,sd2)
-    tmp = p.map(fun,zip(reind_v,dat_v,lane_ID_v,val_v))
+    tmp = []
+    for k in range(len(reind_v)):
+        tmp.append(predictions_1lane(reind_=reind_v[k],dat_=dat_v[k],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,rescale=rescale,sd2=sd2,val=val_v[k],lane_ID=lane_ID_v[k]))
     # Return a nice behave np array with cell_ID, z[0],z[1],err_z[0],err_z[1]
     foo = []
     for lan in tmp:
         for cid in lan:
             foo.append(np.hstack((np.hstack([cid[0]]*len(cid[1]))[:,None],np.hstack(cid[1]).T,np.vstack(cid[2]))))
     return np.vstack(foo)
+
 def cost_function(x,in_dic,r2=True):
     """Return the r2 between predicted and observed data"""
     mlam,gamma,sl2,sm2 = x
@@ -448,13 +460,13 @@ def merge_df_pred(df,pred_mat):
     """Merge the output from predict with the initial dataframe"""
     # From mat to dataframe
     dft = pd.DataFrame(pred_mat,columns=\
-                       ('cell_','pred_z0','pred_growth_rate',\
-                        'err_z0','err_growth_rate'))
+                       ('cell_','pred_log_length','pred_growth_rate',\
+                        'err_log_length','err_growth_rate'))
     # Give numerical values
-    dft[['pred_z0','pred_growth_rate','err_z0','err_growth_rate']] = \
-            dft[['pred_z0','pred_growth_rate','err_z0','err_growth_rate']].apply(pd.to_numeric)
+    dft[['pred_log_length','pred_growth_rate','err_log_length','err_growth_rate']] = \
+            dft[['pred_log_length','pred_growth_rate','err_log_length','err_growth_rate']].apply(pd.to_numeric)
     #Create subindex for merging
-    dft['sub_ind'] = dft.groupby('cell_')['pred_z0'].transform(lambda x:\
+    dft['sub_ind'] = dft.groupby('cell_')['pred_log_length'].transform(lambda x:\
                                                                np.arange(len(x)))
     # Create same indexing in df
     df['cell_'] = df['lane_ID']+df['id'].apply(lambda x: '_'+str(x)+'.0')

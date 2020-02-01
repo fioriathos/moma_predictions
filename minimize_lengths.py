@@ -101,17 +101,17 @@ class minimize_lengths(object):
             tmp = minimize(funct, x0, args=(in_dic,fun),\
                            method=self.method,jac = False,\
                            bounds=self.boundary,\
-                           gtol = 1e-09,\
                            constraints = self.cons,\
-                           options={'maxiter':max(1000, 10*len(x0))})
+                           options={'ftol':1e-10,'gtol':1e-07,'maxiter':max(1000,\
+                                                                           10*len(x0))})
         else:
             #print "SOMETIMES PROBLEMS WITH ANALYTICAL GRADIENT"
             tmp = minimize(self.tot_grad_obj, x0, args=(in_dic,fun,reg),\
                            method=self.method,jac = True,\
                            bounds=self.boundary,\
                            constraints = self.cons,\
-                           #gtol = 1e-07*in_dic['n_point'],\
-                           options={'maxiter':max(1000, 10*len(x0))})
+                           options={'ftol':1e-10,'gtol':1e-07,'maxiter':max(1000,\
+                                                                           10*len(x0))})
         total_par = self.rebuild_param(tmp['x'],**self.fixed)
         lik_grad = tmp['fun']
         return tmp,total_par,lik_grad
