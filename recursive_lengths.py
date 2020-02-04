@@ -144,7 +144,8 @@ def log_likelihood(x,m,Q,sm2):
     den = sm2+Q[0,0]
     # if den gets too small..
     #np.seterr(invalid='raise') # if log negative stop everything
-    assert den>0, "wrong state space Q[00]={} and sm2 + {}".format(Q[0,0],sm2)
+    assert den>0, "wrong state space Q[00]={} and sm2 + {}. Give other initial\
+    conditions or increase the rescaling".format(Q[0,0],sm2)
     if den<1e-08:
         tmp = -(x-m[0,0])**2/(2*den)-0.5*(np.log(1e10*den)-np.log(1e10)+np.log(2*np.pi))
     else:
@@ -271,7 +272,7 @@ def inverse(A):
     return np.array([[A[1,1],-A[0,1]],[-A[1,0],A[0,0]]])\
             /(A[0,0]*A[1,1]-A[0,1]*A[1,0])
 def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,rescale,sd2):
-    """Return optiman length and growth (z) and std """
+    """Return optiman length and growth (z) and std as erro """
     z = []; err_z=[]
     #### Initialize parameters for recurrence
     F, A, a = parameters(gamma,dt,mlam,sl2)
@@ -382,6 +383,7 @@ def build_intial_mat(df,leng):
         """Return slope (lambda), intercept (x0) and residuals (form sm2)"""
         t = t - t.iloc[0]
         r = linregress(t,y)
+        assert len(t)>2, "not enough points"
         return r.slope,r.intercept, y-(r.intercept+t*r.slope)
     G = df.groupby('cell').apply(lambda x: sleres(x.time_sec/60.,x['{}'.format(leng)]))
     G = np.vstack(G)
@@ -418,12 +420,59 @@ def who_goes_where(val):
     tmp2 = np.vstack(list(map(fun,tmp2)))
     return np.hstack([tmp1,tmp2])
 #
-def build_data_strucutre(df,leng,rescale):
+def asym_dist_1lane(reind_,dat_,dt,rescale):
+    """Find the asymmetric distribution in log space for one lane"""
+    from scipy.stats import linregress
+    from copy import deepcopy
+    reind = deepcopy(reind_); dat = deepcopy(dat_)
+    distx0 = []; distlam = []; distk0 = []           # total objective and gradient
+    def pred_moth(i,j):
+        """Predict division length and growth rate. Do same for inital one"""
+        # Linear fit one cell cycle to estimate length mother and lenght daughter
+        W=dat[i][1][j].reshape(-1)
+        t = np.arange(0,dt*len(W),dt)
+        tmp = linregress(t,W)
+        tmp1 = linregress(t[:4],W[:4])
+        tmp2 = linregress(t[:4],W[-4:])
+        if np.isnan(reind[i,j]) == False:
+            # predict cell lenght at division and el_rat
+            foo = np.append(t,t[-1]+dt/2)*tmp.slope+tmp.intercept
+            dat[int(reind[i,j])][0] = {'ml':foo[-1],'mlam':tmp2.slope}
+        return tmp.intercept, tmp1.slope #x0 and lambda
+    ## APPLY
+    for i in range(len(dat)):
+        # If cell doesn't have mother just predict length of daugther and save them
+        if type(dat[i][0])!=dict:
+            pred_moth(i,0);
+            if np.sum(np.isnan(dat[i][1][1]))==0:
+                pred_moth(i,1)
+        # If it does has a mother predict its length and save the log  difference betwee half of mother cell and daugther one
+        else:
+            x0,lam = pred_moth(i,0)
+            distx0.append(dat[i][0]['ml']-rescale*np.log(2)-x0)
+            distlam.append(dat[i][0]['mlam']-lam)
+            distk0.append([x0,lam])
+            if np.sum(np.isnan(dat[i][1][1]))==0:
+                x0,lam = pred_moth(i,1)
+                distx0.append(dat[i][0]['ml']-rescale*np.log(2)-x0)
+                distlam.append(dat[i][0]['mlam']-lam)
+                distk0.append([x0,lam])
+    return distx0, distlam, distk0
+def asym_dist(reind_v,dat_v,dt,rescale):
+    """Return distribution of difference between predictd half size and actual cell division (distx0); differene in growth rates between mother and daugheter (distlam); and initial condition (x,lam) distk0 """
+    distx0 = []; distlam = []; distk0 =[] 
+    for i,j in enumerate(dat_v):
+        dx0 , dlam, dk0 = asym_dist_1lane(reind_v[i],dat_v[i],dt,rescale)
+        distx0.append(dx0); distlam.append(dlam); distk0.append(dk0)
+    flat = lambda dist: np.array([j for k in dist for j in k]) 
+    return flat(distx0),flat(distlam), flat(distk0)
+#
+def build_data_strucutre(df,leng,rescale,info=False):
     """Return for every lane the data with respective daughteres and initial conditions"""
     #Sometimes cells with 1 data point are present and we don't want them
     df = df.groupby('cell').filter(lambda x: x.values.shape[0]>1) #
-    dt = (df['time_sec'].iloc[1]-df['time_sec'].iloc[0])/60
-    assert dt == 3 or dt == 6, "look if dt make sense"
+    dt = np.diff(np.sort(df['time_sec'].unique()))[1]/60
+    assert dt%3==0 and dt != 0., "look if dt make sense"
     #rescae
     df['log_resc_'+leng] = np.log(df['{}'.format(leng)])*rescale
     #print("The variable to use is: log_resc_{}".format(leng))
@@ -450,11 +499,14 @@ def build_data_strucutre(df,leng,rescale):
                 else:
                     vec_dat_v.append(j[1][1])
     vec_dat_v = np.hstack(vec_dat_v).T
-    #asym division equal to 0.1 cv
+    if info:
+        print("To estimate sd2 call asym_dist! Otherwise is set to cv 0.1")
+    sd2, _, _ = asym_dist(reind_v,dat_v,dt=dt,rescale=rescale)
+    #asym division equal to 0.1 cv(0.1*rescale*np.log(2))**2
     return df,{'n_point':n_point,'dt':dt,'s':s,'S':S,'grad_matS':grad_matS,\
             'reind_v':reind_v,'dat_v':dat_v, 'val_v':val_v,\
                'lane_ID_v':lane_ID_v,'rescale':rescale,'sm2':sm,\
-               'vec_dat_v':vec_dat_v,'sd2':(0.1*rescale*np.log(2))**2}
+               'vec_dat_v':vec_dat_v,'sd2':np.var(sd2)}
 #
 def merge_df_pred(df,pred_mat):
     """Merge the output from predict with the initial dataframe"""
@@ -486,6 +538,31 @@ def find_best_lengths(files,pwd='/scicore/home/nimwegen/fiori/MoMA_predictions/p
         tmp.append([files,k,err])
     tmp = np.vstack(tmp)
     return tmp[tmp[:,2]==min(tmp[:,2])]
+def denoised_dataset(df,step):
+    """Try to obtain a dataset without noise by sampling every <<step>> """
+    # At least 2 cell per cell
+    df = df.groupby('cell').filter(lambda x: True if len(x['time_sec'])>2*step else False)
+    df = df.reset_index()
+    ret = []
+    for tau in range(step):
+        tmp = (np.sort(df['time_sec'].unique()[tau:])[::step])
+        dfsh = pd.concat([df.loc[df['time_sec']==tmp[k]] for k in range(tmp.shape[0])])
+        dfsh = dfsh.sort_index().reset_index()
+        ret.append(dfsh)
+    return ret
+ ################################################################################################
+############################### MARGING FILES  #########################################
+################################################################################################
+def connect_df(files,pwd='/scicore/home/nimwegen/rocasu25/Documents/Projects/biozentrum/MoM_constitExpr/20190612_forAthos/'):
+    """Connect all pandas in files.txt togetehr"""
+    tmp = []
+    for j in files:
+        dtm = pd.read_csv(pwd+j+'/'+j+'.csv')
+        dtm['date'] = j
+        dtm['cell'] = dtm['date']+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))+dtm['id'].apply(lambda x: str(x))
+        dtm['lane_ID'] = dtm['date']+dtm['lane_ID']
+        tmp.append(dtm)
+    return pd.concat(tmp)
 ################################################################################################
 ############################### The stocastics models  #########################################
 ################################################################################################
