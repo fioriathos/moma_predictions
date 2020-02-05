@@ -110,7 +110,7 @@ class minimize_lengths(object):
         """Use Analytical gradient until it workds. Then use numerical in case"""
         tmp,total_par,obj  =\
         self.minimize_both_vers(in_dic=in_dic,numerical=numerical,x0=x0,fun=fun,reg=reg)
-        tt = self.tot_objective(total_par,in_dic)
+        #tt = self.tot_objective(total_par,in_dic)
         ret = {}
         ret['log_lik'] = -obj
         ret['message'] = tmp['task']

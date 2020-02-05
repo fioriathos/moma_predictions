@@ -4,6 +4,7 @@ from copy import deepcopy
 import pandas as pd
 import time
 from pathos.multiprocessing import ProcessingPool as Pool
+from scipy.stats import linregress
 ########################################################################################
 #############################INFERENCE METHODS##########################################
 ########################################################################################
@@ -377,7 +378,6 @@ def predict(min_dic, in_dic):
 ################################################################################################
 def build_intial_mat(df,leng):
     """ Build the intiala matrix s,S and intial gradient grad_S """
-    from scipy.stats import linregress
     # Computation done in minutes (that's why *60)
     def sleres(t,y):
         """Return slope (lambda), intercept (x0) and residuals (form sm2)"""
@@ -422,7 +422,6 @@ def who_goes_where(val):
 #
 def asym_dist_1lane(reind_,dat_,dt,rescale):
     """Find the asymmetric distribution in log space for one lane"""
-    from scipy.stats import linregress
     from copy import deepcopy
     reind = deepcopy(reind_); dat = deepcopy(dat_)
     distx0 = []; distlam = []; distk0 = []           # total objective and gradient
@@ -538,10 +537,10 @@ def find_best_lengths(files,pwd='/scicore/home/nimwegen/fiori/MoMA_predictions/p
         tmp.append([files,k,err])
     tmp = np.vstack(tmp)
     return tmp[tmp[:,2]==min(tmp[:,2])]
-def denoised_dataset(df,step):
+def denoised_dataset(df,step,nump=3):
     """Try to obtain a dataset without noise by sampling every <<step>> """
     # At least 2 cell per cell
-    df = df.groupby('cell').filter(lambda x: True if len(x['time_sec'])>2*step else False)
+    df = df.groupby('cell').filter(lambda x: True if len(x['time_sec'])>nump*step else False)
     df = df.reset_index()
     ret = []
     for tau in range(step):
@@ -550,19 +549,116 @@ def denoised_dataset(df,step):
         dfsh = dfsh.sort_index().reset_index()
         ret.append(dfsh)
     return ret
- ################################################################################################
-############################### MARGING FILES  #########################################
 ################################################################################################
-def connect_df(files,pwd='/scicore/home/nimwegen/rocasu25/Documents/Projects/biozentrum/MoM_constitExpr/20190612_forAthos/'):
+############################### ADDITIONAL FUNCTIONS FOR ANALYSIS  #############################
+################################################################################################
+def connect_and_filt_df(files,dt,pwd='/scicore/home/nimwegen/rocasu25/Documents/Projects/biozentrum/MoM_constitExpr/20190612_forAthos/'):
     """Connect all pandas in files.txt togetehr"""
+    def sleres(y,dt=dt):
+        """Return slope (lambda), intercept (x0) and residuals (form sm2)"""
+        t = np.arange(0,len(y)*dt,dt)
+        r = linregress(t,y)
+        return r.rvalue
     tmp = []
     for j in files:
         dtm = pd.read_csv(pwd+j+'/'+j+'.csv')
         dtm['date'] = j
         dtm['cell'] = dtm['date']+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))+dtm['id'].apply(lambda x: str(x))
-        dtm['lane_ID'] = dtm['date']+dtm['lane_ID']
+        dtm['lane_ID'] = dtm['date']+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))
         tmp.append(dtm)
-    return pd.concat(tmp)
+    df = pd.concat(tmp)
+    assert np.sum(df['discard_top'])==0
+    assert np.sum(np.sum(df['end_type']!='div'))==0
+    df = df.groupby('cell').filter(lambda x: len(x['time_sec'])>2)
+    df = df.groupby('cell').filter(lambda x:\
+                                   sleres(np.log(x.length_um))>0.98)
+    return df
+def genalogy(df,gen_deg='parent_cell'):
+    """find one geanolgy upper"""
+    if 'parent_cell' not in df.columns:
+        df['parent_cell'] = df['lane_ID']+df['parent_id'].apply(lambda x:str(x))
+    for k in df.cell.unique():
+        daug = df.loc[df['cell']==k] #daug
+        gmum = df.loc[df['cell']==daug['{}'.format(gen_deg)].iloc[0]]['parent_cell'] #grand grand mum
+        try:
+            df.loc[df['cell']==k,'g_'+'{}'.format(gen_deg)] = gmum.iloc[0]
+        except IndexError:
+            df.loc[df['cell']==k,'g_'+'{}'.format(gen_deg)] = 'nan'
+    return df
+def corr_par(df,elrat,par_deg='parent_cell'):
+    """find correlation parameters """
+    ret=[]
+    for k in df.cell.unique():
+        try:
+            mum = elrat.loc[k]
+            daug = elrat.loc[df.loc[df['cell']==k]['{}'.format(par_deg)].iloc[0]]
+            ret.append([mum,daug])
+        except KeyError:
+            continue
+    tmp = np.array(ret)
+    return np.corrcoef(tmp[:,:1].reshape(-1),tmp[:,1:].reshape(-1))[0,1], tmp.shape[0]
+def long_corr_in_data(df,dt):
+    """Find corr over generations in dataframes"""
+    def sleres(y,dt=dt):
+        """Return slope (lambda), intercept (x0) and residuals (form sm2)"""
+        t = np.arange(0,dt*len(y),dt) 
+        r = linregress(t,y)
+        return r.slope
+    df = genalogy(df,'parent_cell')
+    df = genalogy(df,'g_parent_cell')
+    df = genalogy(df,'g_g_parent_cell')
+    df = genalogy(df,'g_g_g_parent_cell') 
+    elrat = df.groupby('cell').apply(lambda x: sleres(np.log(x.length_um)))
+    return np.vstack([corr_par(df,elrat,par_deg=k) for k in ['parent_cell','g_parent_cell','g_g_parent_cell','g_g_g_parent_cell','g_g_g_g_parent_cell'] ])    
+def smilar_frame(W,cvd=0):
+    """From  OU create a dataframe with same shape as biological data (divison at twice the size).. Consider also asymmetric division """
+    explen = []; lane_ID=[]; parent_ID=[]; id_n=[-1]; time_sec=[]; df=[]
+    W = deepcopy(W); 
+    for i in range(W.shape[0]):
+        tmp = [W[i,0]]
+        fix = W[i,0]
+        ts=[0]
+        for k in range(1,W.shape[1]-1):
+            #if tmp[-1] < tmp[0]+np.log(2):
+            #Do the choice stocastically otherwise we accumulate always some lengths
+            #print([W[i,k]< tmp[0]+np.log(2),W[i,k+1]< tmp[0]+np.log(2)])
+            div = np.random.normal(np.log(2),np.log(2)*cvd)
+            if np.random.choice([W[i,k]< fix+div,W[i,k+1]< fix+div],1,p=[0.5,0.5])[0]:
+                tmp.append(W[i,k])
+                ts.append(ts[-1]+180)
+            else:
+                lane_ID = ['lane_num_{}'.format(i)]*int(len(tmp))
+                parent_ID = ['{}'.format(id_n[-1])]*int(len(tmp))
+                id_n = ['{}'.format(k)]*int(len(tmp))
+                explen= np.exp(tmp)
+                time_sec = ts
+                ts=[ts[-1]]         
+                tmp = [tmp[-1]-div]
+                W[i,:] = W[i,:]-div
+                #print(len(explen))
+                #print(len(lane_ID))
+                df.append(pd.DataFrame({'leng':explen,'lane_ID':lane_ID,'parent_id':parent_ID, 'id':id_n,'time_sec':time_sec}))
+    df = pd.concat(df,ignore_index=True)
+    df['cell'] = df['lane_ID']+'_'+df['id']
+    return df
+def syntetic_corr_gen(mlam,gamma,sl2,sm2,dt,cpl=40, lenc = 25, ncel = 20):
+    def sleres(y,dt=dt):
+        """Return slope (lambda), intercept (x0) and residuals (form sm2)"""
+        t = np.arange(0,dt*len(y),dt) 
+        r = linregress(t,y)
+        return r.slope
+    W,X = integrated_ou(mlam,gamma,sl2,sm2=0,dt=dt,length=cpl*lenc,ncel=ncel)
+    dfsy = smilar_frame(W,cvd=0.)
+    dfsy['leng'] = dfsy['leng'].apply(lambda x: np.exp(np.random.normal(np.log(x),np.sqrt(sm2))))
+    dfsy,in_dic_sy = build_data_strucutre(dfsy,'leng',1)
+    dfsy['parent_cell'] = dfsy['lane_ID']+'_'+dfsy['parent_id']
+    dfsy = genalogy(dfsy,'parent_cell')
+    dfsy = genalogy(dfsy,'g_parent_cell')
+    dfsy = genalogy(dfsy,'g_g_parent_cell')
+    dfsy = genalogy(dfsy,'g_g_g_parent_cell')
+    elratsy = dfsy.groupby('cell').apply(lambda x: sleres(x.log_resc_leng))
+    corr_long = np.vstack([corr_par(dfsy,elratsy,par_deg=k) for k in ['parent_cell','g_parent_cell','g_g_parent_cell','g_g_g_parent_cell','g_g_g_g_parent_cell'] ])
+    return corr_long
 ################################################################################################
 ############################### The stocastics models  #########################################
 ################################################################################################
