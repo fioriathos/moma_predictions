@@ -18,13 +18,13 @@ class minimize_lengths(object):
             self.boundary = [(1e-13,None)]*len(free)
         #Check all keys are either fixed or not
         assert set(fixed.keys())|set((free.keys()))==set(('sm2', 'sl2',\
-                                                          'gamma','m_lam'))
+                                                          'gamma','mlam'))
         # Fix them as model parameters
         def set_att(key,val):
             if key=='gamma':self.gamma=val
             if key=='sl2':self.sl2=val
             if key=='sm2':self.sm2=val
-            if key=='m_lam':self.m_lam=val
+            if key=='mlam':self.mlam=val
         #set attributes
         for key,val in free.items():
             set_att(key,val)
@@ -34,7 +34,7 @@ class minimize_lengths(object):
         """From np.array vec divide in array the non fixed and dict the fix by giving fixed"""
         from collections import OrderedDict
         vecout = {}
-        tmp = OrderedDict([('m_lam',vec[0]),('gamma',vec[1]),( 'sl2',vec[2]),( 'sm2',vec[3])])
+        tmp = OrderedDict([('mlam',vec[0]),('gamma',vec[1]),( 'sl2',vec[2]),( 'sm2',vec[3])])
         for key in kwargs:
             vecout[key]=tmp[key]
             del tmp[key]
@@ -42,7 +42,7 @@ class minimize_lengths(object):
     def rebuild_param(self,vec,**kwargs):
         """ Inverse operation than fix_par"""
         from collections import OrderedDict
-        tmp = OrderedDict([( 'm_lam',None),('gamma',None),( 'sl2',None),( 'sm2',None)])
+        tmp = OrderedDict([( 'mlam',None),('gamma',None),( 'sl2',None),( 'sm2',None)])
         for key,val in kwargs.items():
             assert val!=None, "Can't have None as fixed values"
             tmp[key]=val
@@ -81,15 +81,15 @@ class minimize_lengths(object):
         """Return the x np array"""
         x0 = [None]*4
         for i in self.free:
-            if i=='m_lam':x0[0]=self.free[i]
+            if i=='mlam':x0[0]=self.free[i]
             if i=='gamma':x0[1]=self.free[i]
             if i=='sl2':x0[2]=self.free[i]
             if i=='sm2':x0[3]=self.free[i]
         x0 = [x for x in x0 if x is not None]
         return np.array(x0)
-    def minimize_both_vers(self,in_dic,x0=None,numerical=False,fun=rl.grad_obj_wrap,reg=None):
+    def minimize_both_vers(self,in_dic,x0=None,numerical=False,fun=rl.grad_obj_wrap,reg=None,factr=1e4,pgtol=1e-08):
         """Minimize module.tot_grad_obj(t,path) at point x0={mu:,sigmas,..} considering dic['fix]={mu:,..}"""
-        from scipy.optimize import minimize
+        from scipy.optimize import fmin_l_bfgs_b
         # Initialize intial condition for first time
         if x0 is None:
             x0 = self.initialize()
@@ -98,46 +98,38 @@ class minimize_lengths(object):
         if numerical:
             funct = lambda x,y,z:\
                 self.tot_grad_obj(x0=x,in_dic=y,fun=z,reg=reg)[0]
-            tmp = minimize(funct, x0, args=(in_dic,fun),\
-                           method=self.method,jac = False,\
-                           bounds=self.boundary,\
-                           gtol = 1e-09,\
-                           constraints = self.cons,\
-                           options={'maxiter':max(1000, 10*len(x0))})
+            x,obj,tmp = fmin_l_bfgs_b(funct, x0, args=(in_dic,fun,reg),\
+                        approx_grad=True,epsilon=1e-08,bounds=self.boundary,factr=factr,pgtol=pgtol)
         else:
-            #print "SOMETIMES PROBLEMS WITH ANALYTICAL GRADIENT"
-            tmp = minimize(self.tot_grad_obj, x0, args=(in_dic,fun,reg),\
-                           method=self.method,jac = True,\
-                           bounds=self.boundary,\
-                           constraints = self.cons,\
-                           #gtol = 1e-07*in_dic['n_point'],\
-                           options={'maxiter':max(1000, 10*len(x0))})
-        total_par = self.rebuild_param(tmp['x'],**self.fixed)
-        lik_grad = tmp['fun']
-        return tmp,total_par,lik_grad
+            x,obj,tmp = fmin_l_bfgs_b(self.tot_grad_obj,x0,args=(in_dic,fun,reg),\
+                        fprime=None,bounds=self.boundary,factr=factr,pgtol=pgtol)
+        total_par = self.rebuild_param(x,**self.fixed)
+        return tmp,total_par,obj
     def minimize(self,in_dic, x0=None, numerical=False,\
                  fun=rl.grad_obj_wrap,reg=None):
         """Use Analytical gradient until it workds. Then use numerical in case"""
-        tmp,total_par,lik_grad =\
+        tmp,total_par,obj  =\
         self.minimize_both_vers(in_dic=in_dic,numerical=numerical,x0=x0,fun=fun,reg=reg)
-        tt = self.tot_objective(total_par,in_dic)
+        #tt = self.tot_objective(total_par,in_dic)
         ret = {}
-        ret['log_lik'] = -tmp['fun']
-        ret['message'] = tmp['message']
-        ret['success'] = tmp['success']
-        ret['status'] = tmp['status']
-        ret['jac'] = tt[1].reshape(-1)
+        ret['log_lik'] = -obj
+        ret['message'] = tmp['task']
+        ret['status'] = tmp['warnflag']
+        ret['jac'] = tmp['grad']
         ret['best_param'] = {'mlam':total_par[0],\
                             'gamma':total_par[1],\
                             'sl2':total_par[2],\
                             'sm2':total_par[3],\
                             }
-        if tmp['status']:
-            self.m_lam = total_par[0]
+        if tmp['warnflag']==True or tmp['warnflag']==0:
+            self.mlam = total_par[0]
             self.gamma = total_par[1]
             self.sl2= total_par[2]
             self.sm2= total_par[3]
         return ret
+    def correct_scaling(self,in_dic):
+        res = in_dic['rescale']
+        return [self.mlam/res,self.gamma,self.sl2/res**2,self.sm2/res**2]
     def gradient_descent(self,in_dic,eta=1e-06,runtime=10000,x0=None\
                          ,show=False,fun=rl.grad_obj_wrap,reg=None):
         if x0 is None:
@@ -173,7 +165,7 @@ class minimize_lengths(object):
         #    print("Probably a problem with gradient, do numerical")
         #    tmp,total_par,lik_grad = self.minimize_both_vers(in_dic=in_dic,x0=tmp['x'],numerical=True)
         #print("--- %s seconds ---" % (time.time() - start_time))
-#        self.m_lam= total_par[1]
+#        self.<mlam>= total_par[1]
 #        self.gamma= total_par[2]
 #        self.sl2= total_par[3]
 #        self.sm2= total_par[4]
