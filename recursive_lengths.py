@@ -539,7 +539,7 @@ def find_best_lengths(files,pwd='/scicore/home/nimwegen/fiori/MoMA_predictions/p
     return tmp[tmp[:,2]==min(tmp[:,2])]
 def denoised_dataset(df,step,nump=3):
     """Try to obtain a dataset without noise by sampling every <<step>> """
-    # At least 2 cell per cell
+    # At least nump cell per cell
     df = df.groupby('cell').filter(lambda x: True if len(x['time_sec'])>nump*step else False)
     df = df.reset_index()
     ret = []
