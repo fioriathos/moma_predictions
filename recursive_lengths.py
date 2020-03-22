@@ -166,23 +166,41 @@ def grad_log_likelihood(x,m,Q,sm2,grad_mat):
                     [grad('m_sl2','Q_sl2')],\
                     [grad('m_sm2','Q_sm2',1)]])
 #------------------ OBJECTIVE OVER CELL CYCLE/ LANE AND TOTAL-----------------------------------
+#def cell_division_likelihood_and_grad(m,Q,grad_mat_Q,sd2,rescale,grad=True):
+#    """Cell division likelihood and gradient after asymmetric cell division with
+#    std=sqrt(sd2)"""
+#    pref_l = (Q[0,1]**2-Q[1,1]*(Q[0,0]+sd2))
+#    pref_r = (4*Q[0,1]**2-Q[1,1]*(Q[0,0]+sd2))
+#    pref = pref_l/pref_r
+#    S = np.array([[Q[0,0]+sd2,2*Q[0,1]],[2*Q[0,1],Q[1,1]]])*pref
+#    s = np.array([[m[0,0]-rescale*np.log(2)],[m[1,0]]])
+#    grad_matS = {}
+#    def gm(x):
+#        GQ = grad_mat_Q['{}'.format(x)]
+#        gpref_l = 2*Q[0,1]*GQ[0,1]-GQ[1,1]*(Q[0,0]+sd2)-Q[1,1]*GQ[0,0]
+#        gpref_r = 8*Q[0,1]*GQ[0,1]-GQ[1,1]*(Q[0,0]+sd2)-Q[1,1]*GQ[0,0]
+#        gpref = (gpref_l*pref_r-pref_l*gpref_r)/(pref_r**2)
+#        grad_matS['{}'.format(x)] = \
+#                np.array([[Q[0,0]+sd2,2*Q[0,1]],[2*Q[0,1],Q[1,1]]])*gpref+\
+#                np.array([[GQ[0,0],2*GQ[0,1]],[2*GQ[0,1],GQ[1,1]]])*pref
+#    def gv(x):
+#        mat = grad_mat_Q['{}'.format(x)]
+#        grad_matS['{}'.format(x)] = \
+#        np.array([[mat[0,0]],[mat[1,0]]])
+#    if grad:
+#        gv('m_mlam');gv('m_gamma');gv('m_sl2');gv('m_sm2')
+#        gm('Q_mlam');gm('Q_gamma');gm('Q_sl2');gm('Q_sm2')
+#        return s, S, grad_matS
+#    else:
+#        return s,S
 def cell_division_likelihood_and_grad(m,Q,grad_mat_Q,sd2,rescale,grad=True):
-    """Cell division likelihood and gradient after asymmetric cell division with
-    std=sqrt(sd2)"""
-    pref_l = (Q[0,1]**2-Q[1,1]*(Q[0,0]+sd2))
-    pref_r = (4*Q[0,1]**2-Q[1,1]*(Q[0,0]+sd2))
-    pref = pref_l/pref_r
-    S = np.array([[Q[0,0]+sd2,2*Q[0,1]],[2*Q[0,1],Q[1,1]]])*pref
+    S = np.array([[Q[0,0]+sd2,Q[0,1]],[Q[0,1],Q[1,1]]])
     s = np.array([[m[0,0]-rescale*np.log(2)],[m[1,0]]])
     grad_matS = {}
     def gm(x):
         GQ = grad_mat_Q['{}'.format(x)]
-        gpref_l = 2*Q[0,1]*GQ[0,1]-GQ[1,1]*(Q[0,0]+sd2)-Q[1,1]*GQ[0,0]
-        gpref_r = 8*Q[0,1]*GQ[0,1]-GQ[1,1]*(Q[0,0]+sd2)-Q[1,1]*GQ[0,0]
-        gpref = (gpref_l*pref_r-pref_l*gpref_r)/(pref_r**2)
         grad_matS['{}'.format(x)] = \
-                np.array([[Q[0,0]+sd2,2*Q[0,1]],[2*Q[0,1],Q[1,1]]])*gpref+\
-                np.array([[GQ[0,0],2*GQ[0,1]],[2*GQ[0,1],GQ[1,1]]])*pref
+                np.array([[GQ[0,0],GQ[0,1]],[GQ[0,1],GQ[1,1]]])
     def gv(x):
         mat = grad_mat_Q['{}'.format(x)]
         grad_matS['{}'.format(x)] = \
@@ -193,6 +211,7 @@ def cell_division_likelihood_and_grad(m,Q,grad_mat_Q,sd2,rescale,grad=True):
         return s, S, grad_matS
     else:
         return s,S
+
 def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,grad_matS,rescale,sd2):
     """To check"""
     ##### likelihood and gradient at initial conditions
