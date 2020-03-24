@@ -291,16 +291,27 @@ def new_cov(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,
     """Start from P(z_t|D_t)= N(m;C) and find P(z_{t+dt}|D_t), the covariance here"""
     eglt = np.exp(-gl*dt)
     egqt = np.exp(-gq*dt)
-    nC00 = C11*((1-eglt)/gl)**2+sl2/(2*gl**3)*(2*gl*dt-3+4*eglt-eglt**2)
-    nC01 = C11*eglt*(1-eglt)/gl+sl2/(2*gl**2)*(1-eglt)**2
+    vx = sl2/(2*gl**3)*(2*gl*dt-3+4*eglt-eglt**2)
+    cxl = sl2/(2*gl**2)*(1-eglt)**2
+    cxq = 0; clq = 0
+    vl = sl2/(2*gl)*(1-eglt**2)
+    vq = sq2/(2*gq)*(1-egqt**2)
+    nC00 = (C11*(-1+eglt)**2+gl*(-2*C01*(-1+eglt)+gl*(C00+vx)))/gl**2
+    nC01 = cxl+(eglt*(C11-C11*eglt+C01*gl))/gl
+    nC03 = cxq+(egqt*(C13-C13*eglt+C03*gl))/gl
+    nC11 = C11*eglt**2 + vl
+    nC13 = clq + C13*eglt*egqt
+    nC33 = vq + C33*egqt**2
+    #nC00 = C00+2*C01*(1-eglt)/gl+C11*((1-eglt)/gl)**2+sl2/(2*gl**3)*(2*gl*dt-3+4*eglt-eglt**2)
+    #nC01 =(eglt*(C11-C11*eglt+C01*gl))/gl+sl2/(2*gl**2)*(1-eglt)**2
     nC02 = cv20(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b)
-    nC03 = C13*(1-eglt)/gl*egqt
-    nC11 = C11*eglt**2+sl2/(2*gl)*(1-eglt**2)
+    #nC03 = C03*egqt + C13*(1-eglt)/gl*egqt
+    #nC11 = C11*eglt**2+sl2/(2*gl)*(1-eglt**2)
     nC12 = cov12(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b)
-    nC13 = C13*eglt**2*egqt**2
+    #nC13 = C13*eglt**2*egqt**2
     nC22 = cov22(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b)
     nC23 = cov23(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b)
-    nC33 = C33*egqt**2 + sq2/(2*gq)*(1-egqt**2)
+    #nC33 = C33*egqt**2 + sq2/(2*gq)*(1-egqt**2)
     return nC00,nC01,nC02,nC03,nC11,nC12,nC13,nC22,nC23,nC33
 def new_mean_cov(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
     nm = new_mean(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b)
@@ -933,25 +944,45 @@ def syntetic_corr_gen(mlam,gamma,sl2,sm2,dt,cpl=40, lenc = 25, ncel = 20):
 ################################################################################################
 ############################### The stocastics models  #########################################
 ################################################################################################
-def ornstein_uhlenbeck(mlam,gamma,sl2,length=30,ncel=10,dt=3.,dtsim=1):
-    sam = dt/dtsim
-    lengthsim = length*sam
-    assert (sam).is_integer(), "not sam integer"
-    assert (lengthsim).is_integer(), "no lan integer"
-    sam = int(sam); lengthsim=int(lengthsim)
-    mat = np.zeros((ncel,lengthsim))
+def ornstein_uhlenbeck(mlam,gamma,sl2,length_min=80,ncel=10,dt=.5):
+    """Generate OU process with dtsim (cannot be too large otherwise non stable
+    solutions). Then give back results at every dt"""
+    length = length_min/dt
+    assert (length).is_integer(), "not length integer"
+    length = int(length)
+    mat = np.zeros((ncel,length))
     sig = np.sqrt(sl2)
-    dW = np.random.normal(loc=mat,scale=np.sqrt(dtsim))
-    add = sig*dW*dtsim
+    dW = np.random.normal(loc=mat,scale=np.sqrt(dt))
+    add = sig*dW*dt
     mat[:,0]=add[:,0]+mlam
-    for k in range(1,lengthsim):
-        mat[:,k]=mat[:,k-1]-gamma*(mat[:,k-1]-mlam)*dtsim+add[:,k]
+    for k in range(1,length):
+        mat[:,k]=mat[:,k-1]-gamma*(mat[:,k-1]-mlam)*dt+add[:,k]
+    return mat
+def log_length_synth(L,sx2,dt,X0=0):
+    """L is the OU for log-length production whereas sx2 the measurment error\
+    on lenght. Return log_loength with noise X, without noise Xnn and underlyling OU process"""
+    Xnn = X0 + np.cumsum(L,axis=1)*dt 
+    return np.random.normal(loc=Xnn,scale=np.sqrt(sx2)),Xnn, L
+def protein_prod(Q,Xnn,G0,beta,sg2,dt):
+    """Q is the OU of protein prod, Xnn the not measurment noise log_loength,
+    sg2 error on protein measurment and beta the bleaching """
+    G = np.zeros_like(Xnn)
+    G[:,0] = G0
+    for k in range(1,Xnn.shape[1]):
+        G[:,k] = G[:,k-1]+np.exp(Xnn[:,k-1])*Q[:,k-1]*dt-beta*G[:,k-1]*dt
+    return np.random.normal(loc=G,scale=np.sqrt(sg2)),G
+def sampling_from_path(dtsim,dt):
+    """dtsim is the time interval used to generate the data whereas dt is the\
+    one where we have the data (like the microscope one)"""
+    sam = dt/dtsim
+    assert (sam).is_integer(), "not sam integer"
+    sam = int(sam)
     return mat[:,::sam]
 def integrated_ou(mlam,gamma,sl2,sm2,X0=1,sx0=0.1,length=30,ncel=10,dt=3.,dtsim=1):
     X = ornstein_uhlenbeck(mlam,gamma,sl2,length,ncel,dt,dtsim)
     X0 = np.random.normal(loc=np.ones((ncel,1)),scale=sx0)
     return np.random.normal(loc=np.hstack([X0,np.cumsum(X,axis=1)*dt+X0]),scale=np.sqrt(sm2))[:,:-1], X
-def W_er(st): 
+def W_er(st):
     diffW= abs(W-z[0,:])
     percW = sum(sum(diffW>st*err_z[0,:]))/diffW.shape[1]
     return percW
