@@ -114,180 +114,318 @@ def new_mean(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq
     nm2 = meangt(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b)
     return nm0,nm1,nm2,nm3
 #Covariance
+#def cov23(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
+#   ERIK FORMULA
+#    em0 = np.exp(m0)
+#    ebgqt=np.exp(dt*(-b - gq))
+#    eglt = np.exp(-dt*gl)
+#    f = (1-eglt)/(gl*dt)
+#    le = f*m1 + (1 - f)*ml + ((-3 - eglt**2 + 4*eglt + 2*dt*gl)*sl2)/(2.*gl**3)
+#    e2gqlet = np.exp(dt*(-2*gq + le))
+#    elet = np.exp(dt*le)
+#    cv23_term1 = (em0*((-ebgqt + e2gqlet)/(b - gq + le)*(-1) +\
+#            (-ebgqt + elet)/(b + gq + le))*sq2)/(2.*gq) +\
+#       (C00*em0*((-ebgqt + e2gqlet)/(b - gq + le)*(-1) +\
+#            (-ebgqt + elet)/(b + gq + le))*sq2)/(4.*gq) +\
+#       (C01*em0*(-(((-ebgqt + e2gqlet)*f)/\
+#               (b - gq + le)**2)*(-1) + (dt*e2gqlet*f)/(b - gq + le)*(-1) -\
+#            ((-ebgqt + elet)*f)/(b + gq + le)**2 +\
+#            (dt*elet*f)/(b + gq + le))*sq2)/(2.*gq) +\
+#       (C11*em0*((2*(-ebgqt + e2gqlet)*f**2)/\
+#             (b - gq + le)**3*(-1)- (2*dt*e2gqlet*f**2)/(b - gq + le)**2*(-1)+\
+#            (dt**2*e2gqlet*f**2)/(b - gq + le)*(-1) +\
+#            (2*(-ebgqt + elet)*f**2)/(b + gq + le)**3 -\
+#            (2*dt*elet*f**2)/(b + gq + le)**2 +\
+#            (dt**2*elet*f**2)/(b + gq + le))*sq2)/(4.*gq)
+#    return cv23_term1 + C23*np.exp(-dt*(b+gq))
 def cov23(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
-    em0 = np.exp(m0)
-    ebgqt=np.exp(dt*(-b - gq))
-    eglt = np.exp(-dt*gl)
+    eglt = np.exp(-gl*dt)
     f = (1-eglt)/(gl*dt)
     le = f*m1 + (1 - f)*ml + ((-3 - eglt**2 + 4*eglt + 2*dt*gl)*sl2)/(2.*gl**3)
-    e2gqlet = np.exp(dt*(-2*gq + le))
-    elet = np.exp(dt*le)
-    cv23_term1 = (em0*((-ebgqt + e2gqlet)/(b - gq + le) +\
-            (-ebgqt + elet)/(b + gq + le))*sq2)/(2.*gq) +\
-       (C00*em0*((-ebgqt + e2gqlet)/(b - gq + le) +\
-            (-ebgqt + elet)/(b + gq + le))*sq2)/(4.*gq) +\
-       (C01*em0*(-(((-ebgqt + e2gqlet)*f)/\
-               (b - gq + le)**2) + (dt*e2gqlet*f)/(b - gq + le) -\
-            ((-ebgqt + elet)*f)/(b + gq + le)**2 +\
-            (dt*elet*f)/(b + gq + le))*sq2)/(2.*gq) +\
-       (C11*em0*((2*(-ebgqt + e2gqlet)*f**2)/\
-             (b - gq + le)**3 - (2*dt*e2gqlet*f**2)/(b - gq + le)**2 +\
-            (dt**2*e2gqlet*f**2)/(b - gq + le) +\
-            (2*(-ebgqt + elet)*f**2)/(b + gq + le)**3 -\
-            (2*dt*elet*f**2)/(b + gq + le)**2 +\
-            (dt**2*elet*f**2)/(b + gq + le))*sq2)/(4.*gq)
-    return cv23_term1 + C23*np.exp(-dt*(b+gq))
+    dle = f; t=dt
+    cvz0 = (np.exp(m0 - b*t - gq*t)*(-((-1 + np.exp((b - gq + le)*t))/(b - gq + le)) + (-1 + np.exp((b + gq + le)*t))/(b + gq + le))*sq2)/(2.*gq)
+    dcv_l0 =  (np.exp(m0 - b*t - gq*t)*sq2*((dle*(-1 + np.exp(t*(b - gq + le))))/(b - gq + le)**2 -\
+              (dle*np.exp(t*(b - gq + le))*t)/(b - gq + le) - (dle*(-1 + np.exp(t*(b + gq + le))))/(b + gq + le)**2 +\
+              (dle*np.exp(t*(b + gq + le))*t)/(b + gq + le)))/(2.*gq)
+    ddcv_l0 = (np.exp(m0 - b*t - gq*t)*sq2*((-2*dle**2*(-1 + np.exp(t*(b - gq + le))))/(b - gq + le)**3 + \
+           (2*dle**2*np.exp(t*(b - gq + le))*t)/(b - gq + le)**2 - \
+           (dle**2*np.exp(t*(b - gq + le))*t**2)/(b - gq + le) + \
+           (2*dle**2*(-1 + np.exp(t*(b + gq + le))))/(b + gq + le)**3 - \
+           (2*dle**2*np.exp(t*(b + gq + le))*t)/(b + gq + le)**2 + \
+           (dle**2*np.exp(t*(b + gq + le))*t**2)/(b + gq + le)))/(2.*gq)
+    return cvz0 + C00/2*cvz0+ddcv_l0*C11/2+C01*dcv_l0+C23*np.exp(-(b+gq)*t)
+
+#def cov12(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
+#ERIK FORMULA
+#    em0     = np.exp(m0)
+#    ebglt =    np.exp(dt*(-b - gl))
+#    eglt = np.exp(-dt*gl)
+#    f = (1-eglt)/(gl*dt)
+#    le = f*m1 + (1 - f)*ml + ((-3 - eglt**2 + 4*eglt + 2*dt*gl)*sl2)/(2.*gl**3)
+#    eglgqlet = np.exp(dt*(-gl - gq + le))
+#    e2glgqlet = np.exp(dt*(-2*gl - gq + le))
+#    elet = np.exp(dt*le)
+#    egqlet = np.exp(dt*(-gq + le))
+#    e2gllet = np.exp(dt*(-2*gl + le))
+#    egllet = np.exp(dt*(-gl + le))
+#    cv21_term1 =  em0*((C03*(-2*(-ebglt + eglgqlet)/(b - gq + le) + (-ebglt + e2glgqlet)/(b - gl - gq + le) +\
+#              (-ebglt + egqlet)/(b + gl - gq + le + m1)) + C13*((2*(-ebglt + eglgqlet)*f)/(b - gq + le)**2 -\
+#              (2*dt*eglgqlet*f)/(b - gq + le) - ((-ebglt + e2glgqlet)*f)/\
+#               (b - gl - gq + le)**2 + (dt*e2glgqlet*f)/(b - gl - gq + le) -\
+#              ((-ebglt + egqlet)*(1 + f))/ (b + gl - gq + le + m1)**2 +\
+#              (dt*egqlet*f)/(b + gl - gq + le + m1)) + (1 + C00/2.)*(((-2*(-ebglt + eglgqlet))/\
+#                  (b - gq + le) + (-ebglt + e2glgqlet)/(b - gl - gq + le) +\
+#                 (-ebglt + egqlet)/(b + gl - gq + le + m1))*(m3 - mq) + ((-2*(-ebglt + egllet))/(b + le) +\
+#                 (-ebglt + e2gllet)/(b - gl + le) +(-ebglt + elet)/(b + gl + le))*mq) +C01*(((2*(-ebglt + eglgqlet)*f)/\
+#                  (b - gq + le)**2 - (2*dt*eglgqlet*f)/(b - gq + le) -((-ebglt + e2glgqlet)*f)/\
+#                  (b - gl - gq + le)**2 +(dt*e2glgqlet*f)/(b - gl - gq + le) -\
+#                 ((-ebglt + egqlet)*(1 + f))/(b + gl - gq + le + m1)**2 +\
+#                 (dt*egqlet*f)/(b + gl - gq + le + m1))*(m3 - mq) +((2*(-ebglt + egllet)*f)/(b + le)**2 -\
+#                 (2*dt*egllet*f)/(b + le) -((-ebglt + e2gllet)*f)/(b - gl + le)**2 +\
+#                 (dt*e2gllet*f)/(b - gl + le) -((-ebglt + elet)*f)/(b + gl + le)**2 +\
+#                 (dt*elet*f)/(b + gl + le))*mq) +(C11*(((-4*(-ebglt + eglgqlet)*f**2)/\
+#                    (b - gq + le)**3 + \
+#                   (4*dt*eglgqlet*f**2)/(b - gq + le)**2 -\
+#                   (2*dt**2*eglgqlet*f**2)/(b - gq + le) +\
+#                   (2*(-ebglt + e2glgqlet)*f**2)/\
+#                    (b - gl - gq + le)**3 -\
+#                   (2*dt*e2glgqlet*f**2)/(b - gl - gq + le)**2 +\
+#                   (dt**2*e2glgqlet*f**2)/(b - gl - gq + le) + \
+#                   (2*(-ebglt + egqlet)*(1 + f)**2)/\
+#                    (b + gl - gq + le + m1)**3 - \
+#                   (2*dt*egqlet*f*(1 + f))/(b + gl - gq + le + m1)**2 +\
+#                   (dt**2*egqlet*f**2)/(b + gl - gq + le + m1))*(m3 - mq) +\
+#                ((-4*(-ebglt + egllet)*f**2)/(b + le)**3 + \
+#                   (4*dt*egllet*f**2)/(b + le)**2 - \
+#                   (2*dt**2*egllet*f**2)/(b + le) + \
+#                   (2*(-ebglt + e2gllet)*f**2)/\
+#                    (b - gl + le)**3 - \
+#                   (2*dt*e2gllet*f**2)/(b - gl + le)**2 +\
+#                   (dt**2*e2gllet*f**2)/(b - gl + le) + \
+#                   (2*(-ebglt + elet)*f**2)/(b + gl + le)**3 - \
+#                   (2*dt*elet*f**2)/(b + gl + le)**2 + \
+#                   (dt**2*elet*f**2)/(b + gl + le))*mq))/2.)*sl2)/(2.*gl**2)
+#    return cv21_term1 + C12*np.exp(-dt*(b+gl))
 def cov12(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
-    em0     = np.exp(m0)
-    ebglt =    np.exp(dt*(-b - gl))
-    eglt = np.exp(-dt*gl)
+    """X=fun(0), Y=fun(gq)"""
+    eglt = np.exp(-gl*dt)
     f = (1-eglt)/(gl*dt)
     le = f*m1 + (1 - f)*ml + ((-3 - eglt**2 + 4*eglt + 2*dt*gl)*sl2)/(2.*gl**3)
-    eglgqlet = np.exp(dt*(-gl - gq + le))
-    e2glgqlet = np.exp(dt*(-2*gl - gq + le))
-    elet = np.exp(dt*le)
-    egqlet = np.exp(dt*(-gq + le))
-    e2gllet = np.exp(dt*(-2*gl + le))
-    egllet = np.exp(dt*(-gl + le))
-    cv21_term1 =  em0*((C03*(-2*(-ebglt + eglgqlet)/(b - gq + le) + (-ebglt + e2glgqlet)/(b - gl - gq + le) +\
-              (-ebglt + egqlet)/(b + gl - gq + le + m1)) + C13*((2*(-ebglt + eglgqlet)*f)/(b - gq + le)**2 -\
-              (2*dt*eglgqlet*f)/(b - gq + le) - ((-ebglt + e2glgqlet)*f)/\
-               (b - gl - gq + le)**2 + (dt*e2glgqlet*f)/(b - gl - gq + le) -\
-              ((-ebglt + egqlet)*(1 + f))/ (b + gl - gq + le + m1)**2 +\
-              (dt*egqlet*f)/(b + gl - gq + le + m1)) + (1 + C00/2.)*(((-2*(-ebglt + eglgqlet))/\
-                  (b - gq + le) + (-ebglt + e2glgqlet)/(b - gl - gq + le) +\
-                 (-ebglt + egqlet)/(b + gl - gq + le + m1))*(m3 - mq) + ((-2*(-ebglt + egllet))/(b + le) +\
-                 (-ebglt + e2gllet)/(b - gl + le) +(-ebglt + elet)/(b + gl + le))*mq) +C01*(((2*(-ebglt + eglgqlet)*f)/\
-                  (b - gq + le)**2 - (2*dt*eglgqlet*f)/(b - gq + le) -((-ebglt + e2glgqlet)*f)/\
-                  (b - gl - gq + le)**2 +(dt*e2glgqlet*f)/(b - gl - gq + le) -\
-                 ((-ebglt + egqlet)*(1 + f))/(b + gl - gq + le + m1)**2 +\
-                 (dt*egqlet*f)/(b + gl - gq + le + m1))*(m3 - mq) +((2*(-ebglt + egllet)*f)/(b + le)**2 -\
-                 (2*dt*egllet*f)/(b + le) -((-ebglt + e2gllet)*f)/(b - gl + le)**2 +\
-                 (dt*e2gllet*f)/(b - gl + le) -((-ebglt + elet)*f)/(b + gl + le)**2 +\
-                 (dt*elet*f)/(b + gl + le))*mq) +(C11*(((-4*(-ebglt + eglgqlet)*f**2)/\
-                    (b - gq + le)**3 + \
-                   (4*dt*eglgqlet*f**2)/(b - gq + le)**2 -\
-                   (2*dt**2*eglgqlet*f**2)/(b - gq + le) +\
-                   (2*(-ebglt + e2glgqlet)*f**2)/\
-                    (b - gl - gq + le)**3 -\
-                   (2*dt*e2glgqlet*f**2)/(b - gl - gq + le)**2 +\
-                   (dt**2*e2glgqlet*f**2)/(b - gl - gq + le) + \
-                   (2*(-ebglt + egqlet)*(1 + f)**2)/\
-                    (b + gl - gq + le + m1)**3 - \
-                   (2*dt*egqlet*f*(1 + f))/(b + gl - gq + le + m1)**2 +\
-                   (dt**2*egqlet*f**2)/(b + gl - gq + le + m1))*(m3 - mq) +\
-                ((-4*(-ebglt + egllet)*f**2)/(b + le)**3 + \
-                   (4*dt*egllet*f**2)/(b + le)**2 - \
-                   (2*dt**2*egllet*f**2)/(b + le) + \
-                   (2*(-ebglt + e2gllet)*f**2)/\
-                    (b - gl + le)**3 - \
-                   (2*dt*e2gllet*f**2)/(b - gl + le)**2 +\
-                   (dt**2*e2gllet*f**2)/(b - gl + le) + \
-                   (2*(-ebglt + elet)*f**2)/(b + gl + le)**3 - \
-                   (2*dt*elet*f**2)/(b + gl + le)**2 + \
-                   (dt**2*elet*f**2)/(b + gl + le))*mq))/2.)*sl2)/(2.*gl**2)
-    return cv21_term1 + C12*np.exp(-dt*(b+gl))
+    dle = f; t=dt
+    fun = lambda gq: (2*np.exp(-(b*t) - gl*t))/(b - gq + le) - (2*np.exp(-(b*t) - gl*t + (b - gq + le)*t))/(b - gq + le) -\
+          np.exp(-(b*t) - gl*t)/(b - gl - gq + le) + np.exp(-(b*t) - gl*t + (b - gl - gq + le)*t)/(b - gl - gq + le) -\
+          np.exp(-(b*t) - gl*t)/(b + gl - gq + le) + np.exp(-(b*t) - gl*t + (b + gl - gq + le)*t)/(b + gl - gq + le)
+    dfun_l0 =lambda gq: (-2*dle*np.exp(-(b*t) - gl*t))/(b - gq + le)**2 + (2*dle*np.exp(-(b*t) - gl*t + (b - gq + le)*t))/(b - gq + le)**2 + \
+       (dle*np.exp(-(b*t) - gl*t))/(b - gl - gq + le)**2 - \
+       (dle*np.exp(-(b*t) - gl*t + (b - gl - gq + le)*t))/(b - gl - gq + le)**2 + \
+       (dle*np.exp(-(b*t) - gl*t))/(b + gl - gq + le)**2 - \
+       (dle*np.exp(-(b*t) - gl*t + (b + gl - gq + le)*t))/(b + gl - gq + le)**2 - \
+       (2*dle*np.exp(-(b*t) - gl*t + (b - gq + le)*t)*t)/(b - gq + le) + \
+       (dle*np.exp(-(b*t) - gl*t + (b - gl - gq + le)*t)*t)/(b - gl - gq + le) + \
+       (dle*np.exp(-(b*t) - gl*t + (b + gl - gq + le)*t)*t)/(b + gl - gq + le)
+    ddfun_l0 =lambda gq: (4*dle**2*np.exp(-(b*t) - gl*t))/(b - gq + le)**3 - (4*dle**2*np.exp(-(b*t) - gl*t + (b - gq + le)*t))/(b - gq + le)**3 - \
+       (2*dle**2*np.exp(-(b*t) - gl*t))/(b - gl - gq + le)**3 + \
+       (2*dle**2*np.exp(-(b*t) - gl*t + (b - gl - gq + le)*t))/(b - gl - gq + le)**3 - \
+       (2*dle**2*np.exp(-(b*t) - gl*t))/(b + gl - gq + le)**3 + \
+       (2*dle**2*np.exp(-(b*t) - gl*t + (b + gl - gq + le)*t))/(b + gl - gq + le)**3 + \
+       (4*dle**2*np.exp(-(b*t) - gl*t + (b - gq + le)*t)*t)/(b - gq + le)**2 - \
+       (2*dle**2*np.exp(-(b*t) - gl*t + (b - gl - gq + le)*t)*t)/(b - gl - gq + le)**2 - \
+       (2*dle**2*np.exp(-(b*t) - gl*t + (b + gl - gq + le)*t)*t)/(b + gl - gq + le)**2 - \
+       (2*dle**2*np.exp(-(b*t) - gl*t + (b - gq + le)*t)*t**2)/(b - gq + le) + \
+       (dle**2*np.exp(-(b*t) - gl*t + (b - gl - gq + le)*t)*t**2)/(b - gl - gq + le) + \
+       (dle**2*np.exp(-(b*t) - gl*t + (b + gl - gq + le)*t)*t**2)/(b + gl - gq + le)
+    A = mq*fun(0)+(m3-mq)*fun(gq); dA = mq*dfun_l0(0)+(m3-mq)*dfun_l0(gq);
+    ddA = mq*ddfun_l0(0)+(m3-mq)*ddfun_l0(gq)
+    return sl2/(2*gl**2)*np.exp(m0)*(A*(1+C00/2)+dA*C01+ddA*C11/2\
+                                    +C03*fun(gq)+C13*dfun_l0(gq))+C12*np.exp(-(b+gl)*dt)
+#def cv20(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
+#    em0 = np.exp(m0)
+#    eglt = np.exp(-(dt*gl))
+#    ebt = np.exp(-(b*dt))
+#    ebglt = np.exp(dt*(-b - gl))
+#    f = (1-eglt)/(gl*dt)
+#    le = f*m1 + (1 - f)*ml + ((-3 - eglt**2 + 4*eglt + 2*dt*gl)*sl2)/(2.*gl**3)
+#    egqle = np.exp(dt*(-gq + le))
+#    elet = np.exp(dt*le)
+#    egllet = np.exp(dt*(-gl + le))
+#    eglgqlet = np.exp(dt*(-gl - gq + le))
+#    cv20 = (em0*(C03*((-2*(1 - eglt)*(-ebt + egqle))/(b - gq + le) +\
+#              ((2 - eglt)*(-ebt + eglgqlet))/(b - gl - gq + le) -\
+#              (-ebglt + egqle)/(b + gl - gq + le) +\
+#              (2*gl*(ebt + egqle*(-1 + dt*(b - gq + le))))/(b - gq + le)**2) +\
+#           C13*((2*(1 - eglt)*(-ebt + egqle)*f)/(b - gq + le)**2 -\
+#              (2*dt*egqle*(1 - eglt)*f)/(b - gq + le) -\
+#              ((2 - eglt)*(-ebt + eglgqlet)*f)/(b - gl - gq + le)**2 +\
+#              (dt*eglgqlet*(2 - eglt)*f)/(b - gl - gq + le) +\
+#              ((-ebglt + egqle)*f)/(b + gl - gq + le)**2 -\
+#              (dt*egqle*f)/(b + gl - gq + le) -\
+#              (4*f*gl*(ebt + egqle*(-1 + dt*(b - gq + le))))/(b - gq + le)**3 +\
+#              (2*gl*(dt*egqle*f + dt*egqle*f*(-1 + dt*(b - gq + le))))/(b - gq + le)**2) +\
+#           (1 + C00/2.)*(((-2*(1 - eglt)*(-ebt + egqle))/(b - gq + le) +\
+#                 ((2 - eglt)*(-ebt + eglgqlet))/(b - gl - gq + le) -\
+#                 (-ebglt + egqle)/(b + gl - gq + le) +\
+#                 (2*gl*(ebt + egqle*(-1 + dt*(b - gq + le))))/(b - gq + le)**2)*(m3 - mq) +\
+#              ((-2*(1 - eglt)*(-ebt + elet))/(b + le) +\
+#                 ((2 - eglt)*(-ebt + egllet))/(b - gl + le) -\
+#                 (-ebglt + elet)/(b + gl + le) +\
+#                 (2*gl*(ebt + elet*(-1 + dt*(b + le))))/(b + le)**2)*mq) +\
+#           C01*(((2*(1 - eglt)*(-ebt + egqle)*f)/(b - gq + le)**2 -\
+#                 (2*dt*egqle*(1 - eglt)*f)/(b - gq + le) -\
+#                 ((2 - eglt)*(-ebt + eglgqlet)*f)/(b - gl - gq + le)**2 +\
+#                 (dt*eglgqlet*(2 - eglt)*f)/(b - gl - gq + le) +\
+#                 ((-ebglt + egqle)*f)/(b + gl - gq + le)**2 -\
+#                 (dt*egqle*f)/(b + gl - gq + le) -\
+#                 (4*f*gl*(ebt + egqle*(-1 + dt*(b - gq + le))))/(b - gq + le)**3 +\
+#                 (2*gl*(dt*egqle*f + dt*egqle*f*(-1 + dt*(b - gq + le))))/(b - gq + le)**2)*\
+#               (m3 - mq) + ((2*(1 - eglt)*(-ebt + elet)*f)/(b + le)**2 -\
+#                 (2*dt*elet*(1 - eglt)*f)/(b + le) -\
+#                 ((2 - eglt)*(-ebt + egllet)*f)/(b - gl + le)**2 +\
+#                 (dt*egllet*(2 - eglt)*f)/(b - gl + le) +\
+#                 ((-ebglt + elet)*f)/(b + gl + le)**2 - (dt*elet*f)/(b + gl + le) -\
+#                 (4*f*gl*(ebt + elet*(-1 + dt*(b + le))))/(b + le)**3 +\
+#                 (2*gl*(dt*elet*f + dt*elet*f*(-1 + dt*(b + le))))/(b + le)**2)*mq) +\
+#           (C11*(((2*(2 - eglt)*(-ebt + eglgqlet)*f**2)/(b - gl - gq + le)**3 -\
+#                   (2*dt*eglgqlet*(2 - eglt)*f**2)/(b - gl - gq + le)**2 +\
+#                   (dt**2*eglgqlet*(2 - eglt)*f**2)/(b - gl - gq + le) -\
+#                   (2*(-ebglt + egqle)*f**2)/(b + gl - gq + le)**3 +\
+#                   (2*dt*egqle*f**2)/(b + gl - gq + le)**2 -\
+#                   (dt**2*egqle*f**2)/(b + gl - gq + le) -\
+#                   2*(1 - eglt)*((2*(-ebt + egqle)*f**2)/(b - gq + le)**3 -\
+#                      (2*dt*egqle*f**2)/(b - gq + le)**2 + (dt**2*egqle*f**2)/(b - gq + le)) +\
+#                   2*gl*((6*f**2*(ebt + egqle*(-1 + dt*(b - gq + le))))/(b - gq + le)**4 -\
+#                      (4*f*(dt*egqle*f + dt*egqle*f*(-1 + dt*(b - gq + le))))/(b - gq + le)**3 +\
+#                      (2*dt**2*egqle*f**2 + dt**2*egqle*f**2*(-1 + dt*(b - gq + le)))/\
+#                       (b - gq + le)**2))*(m3 - mq) +\
+#                ((2*(2 - eglt)*(-ebt + egllet)*f**2)/(b - gl + le)**3 -\
+#                   (2*dt*egllet*(2 - eglt)*f**2)/(b - gl + le)**2 +\
+#                   (dt**2*egllet*(2 - eglt)*f**2)/(b - gl + le) -\
+#                   (2*(-ebglt + elet)*f**2)/(b + gl + le)**3 + (2*dt*elet*f**2)/(b + gl + le)**2 -\
+#                   (dt**2*elet*f**2)/(b + gl + le) -\
+#                   2*(1 - eglt)*((2*(-ebt + elet)*f**2)/(b + le)**3 -\
+#                      (2*dt*elet*f**2)/(b + le)**2 + (dt**2*elet*f**2)/(b + le)) +\
+#                   2*gl*((6*f**2*(ebt + elet*(-1 + dt*(b + le))))/(b + le)**4 -\
+#                      (4*f*(dt*elet*f + dt*elet*f*(-1 + dt*(b + le))))/(b + le)**3 +\
+#                      (2*dt**2*elet*f**2 + dt**2*elet*f**2*(-1 + dt*(b + le)))/(b + le)**2))*mq))/2.)*sl2)/\
+#       (2.*gl**3)
+#    return cv20 + C02*np.exp(-b*dt)+C12*np.exp(-b*dt)*(1-np.exp(-gl*dt))/gl
+
 def cv20(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
-    em0 = np.exp(m0)
-    eglt = np.exp(-(dt*gl))
-    ebt = np.exp(-(b*dt))
-    ebglt = np.exp(dt*(-b - gl))
+    eglt = np.exp(-gl*dt)
     f = (1-eglt)/(gl*dt)
     le = f*m1 + (1 - f)*ml + ((-3 - eglt**2 + 4*eglt + 2*dt*gl)*sl2)/(2.*gl**3)
-    egqle = np.exp(dt*(-gq + le))
-    elet = np.exp(dt*le)
-    egllet = np.exp(dt*(-gl + le))
-    eglgqlet = np.exp(dt*(-gl - gq + le))
-    cv20 = (em0*(C03*((-2*(1 - eglt)*(-ebt + egqle))/(b - gq + le) +\
-              ((2 - eglt)*(-ebt + eglgqlet))/(b - gl - gq + le) -\
-              (-ebglt + egqle)/(b + gl - gq + le) +\
-              (2*gl*(ebt + egqle*(-1 + dt*(b - gq + le))))/(b - gq + le)**2) +\
-           C13*((2*(1 - eglt)*(-ebt + egqle)*f)/(b - gq + le)**2 -\
-              (2*dt*egqle*(1 - eglt)*f)/(b - gq + le) -\
-              ((2 - eglt)*(-ebt + eglgqlet)*f)/(b - gl - gq + le)**2 +\
-              (dt*eglgqlet*(2 - eglt)*f)/(b - gl - gq + le) +\
-              ((-ebglt + egqle)*f)/(b + gl - gq + le)**2 -\
-              (dt*egqle*f)/(b + gl - gq + le) -\
-              (4*f*gl*(ebt + egqle*(-1 + dt*(b - gq + le))))/(b - gq + le)**3 +\
-              (2*gl*(dt*egqle*f + dt*egqle*f*(-1 + dt*(b - gq + le))))/(b - gq + le)**2) +\
-           (1 + C00/2.)*(((-2*(1 - eglt)*(-ebt + egqle))/(b - gq + le) +\
-                 ((2 - eglt)*(-ebt + eglgqlet))/(b - gl - gq + le) -\
-                 (-ebglt + egqle)/(b + gl - gq + le) +\
-                 (2*gl*(ebt + egqle*(-1 + dt*(b - gq + le))))/(b - gq + le)**2)*(m3 - mq) +\
-              ((-2*(1 - eglt)*(-ebt + elet))/(b + le) +\
-                 ((2 - eglt)*(-ebt + egllet))/(b - gl + le) -\
-                 (-ebglt + elet)/(b + gl + le) +\
-                 (2*gl*(ebt + elet*(-1 + dt*(b + le))))/(b + le)**2)*mq) +\
-           C01*(((2*(1 - eglt)*(-ebt + egqle)*f)/(b - gq + le)**2 -\
-                 (2*dt*egqle*(1 - eglt)*f)/(b - gq + le) -\
-                 ((2 - eglt)*(-ebt + eglgqlet)*f)/(b - gl - gq + le)**2 +\
-                 (dt*eglgqlet*(2 - eglt)*f)/(b - gl - gq + le) +\
-                 ((-ebglt + egqle)*f)/(b + gl - gq + le)**2 -\
-                 (dt*egqle*f)/(b + gl - gq + le) -\
-                 (4*f*gl*(ebt + egqle*(-1 + dt*(b - gq + le))))/(b - gq + le)**3 +\
-                 (2*gl*(dt*egqle*f + dt*egqle*f*(-1 + dt*(b - gq + le))))/(b - gq + le)**2)*\
-               (m3 - mq) + ((2*(1 - eglt)*(-ebt + elet)*f)/(b + le)**2 -\
-                 (2*dt*elet*(1 - eglt)*f)/(b + le) -\
-                 ((2 - eglt)*(-ebt + egllet)*f)/(b - gl + le)**2 +\
-                 (dt*egllet*(2 - eglt)*f)/(b - gl + le) +\
-                 ((-ebglt + elet)*f)/(b + gl + le)**2 - (dt*elet*f)/(b + gl + le) -\
-                 (4*f*gl*(ebt + elet*(-1 + dt*(b + le))))/(b + le)**3 +\
-                 (2*gl*(dt*elet*f + dt*elet*f*(-1 + dt*(b + le))))/(b + le)**2)*mq) +\
-           (C11*(((2*(2 - eglt)*(-ebt + eglgqlet)*f**2)/(b - gl - gq + le)**3 -\
-                   (2*dt*eglgqlet*(2 - eglt)*f**2)/(b - gl - gq + le)**2 +\
-                   (dt**2*eglgqlet*(2 - eglt)*f**2)/(b - gl - gq + le) -\
-                   (2*(-ebglt + egqle)*f**2)/(b + gl - gq + le)**3 +\
-                   (2*dt*egqle*f**2)/(b + gl - gq + le)**2 -\
-                   (dt**2*egqle*f**2)/(b + gl - gq + le) -\
-                   2*(1 - eglt)*((2*(-ebt + egqle)*f**2)/(b - gq + le)**3 -\
-                      (2*dt*egqle*f**2)/(b - gq + le)**2 + (dt**2*egqle*f**2)/(b - gq + le)) +\
-                   2*gl*((6*f**2*(ebt + egqle*(-1 + dt*(b - gq + le))))/(b - gq + le)**4 -\
-                      (4*f*(dt*egqle*f + dt*egqle*f*(-1 + dt*(b - gq + le))))/(b - gq + le)**3 +\
-                      (2*dt**2*egqle*f**2 + dt**2*egqle*f**2*(-1 + dt*(b - gq + le)))/\
-                       (b - gq + le)**2))*(m3 - mq) +\
-                ((2*(2 - eglt)*(-ebt + egllet)*f**2)/(b - gl + le)**3 -\
-                   (2*dt*egllet*(2 - eglt)*f**2)/(b - gl + le)**2 +\
-                   (dt**2*egllet*(2 - eglt)*f**2)/(b - gl + le) -\
-                   (2*(-ebglt + elet)*f**2)/(b + gl + le)**3 + (2*dt*elet*f**2)/(b + gl + le)**2 -\
-                   (dt**2*elet*f**2)/(b + gl + le) -\
-                   2*(1 - eglt)*((2*(-ebt + elet)*f**2)/(b + le)**3 -\
-                      (2*dt*elet*f**2)/(b + le)**2 + (dt**2*elet*f**2)/(b + le)) +\
-                   2*gl*((6*f**2*(ebt + elet*(-1 + dt*(b + le))))/(b + le)**4 -\
-                      (4*f*(dt*elet*f + dt*elet*f*(-1 + dt*(b + le))))/(b + le)**3 +\
-                      (2*dt**2*elet*f**2 + dt**2*elet*f**2*(-1 + dt*(b + le)))/(b + le)**2))*mq))/2.)*sl2)/\
-       (2.*gl**3)
-    return cv20 + C02*np.exp(-b*dt)+C12*np.exp(-b*dt)*(1-np.exp(-gl*dt))/gl
+    dle = f; t=dt
+    fun = lambda gq:         -(((np.exp(gl*t) - np.exp((b - gq + le)*t))/(-b + gl + gq - le) + (2*(-1 + np.exp((b - gq + le)*t)))/(b - gq + le) - \
+           (2*(-1 + np.exp((b - gq + le)*t)))/(np.exp(gl*t)*(b - gq + le)) - \
+           (2*(-1 + np.exp((b - gl - gq + le)*t)))/(b - gl - gq + le) + \
+           (-1 + np.exp((b - gl - gq + le)*t))/(np.exp(gl*t)*(b - gl - gq + le)) - \
+           (2*(-1 + np.exp((b - gq + le)*t))*gl*t)/(b - gq + le))/np.exp(b*t))
+    dfun = lambda gq:         -(((dle*(np.exp(gl*t) - np.exp((b - gq + le)*t)))/(-b + gl + gq - le)**2 - \
+           (2*dle*(-1 + np.exp((b - gq + le)*t)))/(b - gq + le)**2 + \
+           (2*dle*(-1 + np.exp((b - gq + le)*t)))/(np.exp(gl*t)*(b - gq + le)**2) + \
+           (2*dle*(-1 + np.exp((b - gl - gq + le)*t)))/(b - gl - gq + le)**2 - \
+           (dle*(-1 + np.exp((b - gl - gq + le)*t)))/(np.exp(gl*t)*(b - gl - gq + le)**2) - \
+           (dle*np.exp((b - gq + le)*t)*t)/(-b + gl + gq - le) + (2*dle*(-1 + np.exp((b - gq + le)*t))*gl*t)/(b - gq + le)**2 + \
+           (2*dle*np.exp((b - gq + le)*t)*t)/(b - gq + le) - (2*dle*np.exp(-(gl*t) + (b - gq + le)*t)*t)/(b - gq + le) - \
+           (2*dle*np.exp((b - gl - gq + le)*t)*t)/(b - gl - gq + le) + \
+           (dle*np.exp(-(gl*t) + (b - gl - gq + le)*t)*t)/(b - gl - gq + le) - \
+           (2*dle*np.exp((b - gq + le)*t)*gl*t**2)/(b - gq + le))/np.exp(b*t))
+    ddfun = lambda gq:         -(((2*dle**2*(np.exp(gl*t) - np.exp((b - gq + le)*t)))/(-b + gl + gq - le)**3 + \
+           (4*dle**2*(-1 + np.exp((b - gq + le)*t)))/(b - gq + le)**3 - \
+           (4*dle**2*(-1 + np.exp((b - gl - gq + le)*t)))/(b - gl - gq + le)**3 + \
+           (2*dle**2*(-1 + np.exp((b - gl - gq + le)*t)))/(np.exp(gl*t)*(b - gl - gq + le)**3) - \
+           (2*dle**2*np.exp((b - gq + le)*t)*t)/(-b + gl + gq - le)**2 - \
+           (4*dle**2*(-1 + np.exp((b - gq + le)*t))*gl*t)/(b - gq + le)**3 - \
+           (4*dle**2*np.exp((b - gq + le)*t)*t)/(b - gq + le)**2 + \
+           (4*dle**2*np.exp((b - gl - gq + le)*t)*t)/(b - gl - gq + le)**2 - \
+           (2*dle**2*np.exp(-(gl*t) + (b - gl - gq + le)*t)*t)/(b - gl - gq + le)**2 - \
+           (dle**2*np.exp((b - gq + le)*t)*t**2)/(-b + gl + gq - le) + \
+           (4*dle**2*np.exp((b - gq + le)*t)*gl*t**2)/(b - gq + le)**2 + (2*dle**2*np.exp((b - gq + le)*t)*t**2)/(b - gq + le) - \
+           (2*dle**2*np.exp((b - gl - gq + le)*t)*t**2)/(b - gl - gq + le) + \
+           (dle**2*np.exp(-(gl*t) + (b - gl - gq + le)*t)*t**2)/(b - gl - gq + le) - \
+           (2*dle**2*np.exp((b - gq + le)*t)*gl*t**3)/(b - gq + le) - \
+           (2*((2*dle**2*(-1 + np.exp((b - gq + le)*t)))/(b - gq + le)**3 - \
+                (2*dle**2*np.exp((b - gq + le)*t)*t)/(b - gq + le)**2 + (dle**2*np.exp((b - gq + le)*t)*t**2)/(b - gq + le)))/\
+            np.exp(gl*t))/np.exp(b*t))
+    A = mq*fun(0)+(m3-mq)*fun(gq); dA = mq*dfun(0)+(m3-mq)*dfun(gq);
+    ddA = mq*ddfun(0)+(m3-mq)*ddfun(gq)
+    return sl2/(2*gl**3)*np.exp(m0)*(A*(1+C00/2)+dA*C01+ddA*C11/2\
+           +C03*fun(gq)+C13*dfun(gq))+C02*np.exp(-b*dt)+C12*(1-np.exp(-gl*dt))/gl*np.exp(-b*dt)
+
+
+#def cov22(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
+#    e2m0=np.exp(2*m0)
+#    e2bt = np.exp(2*b*dt)
+#    eglt=np.exp(-gl*dt)
+#    f = (1-eglt)/(gl*dt)
+#    le = f*m1 + (1 - f)*ml + ((-3 - eglt**2 + 4*eglt + 2*dt*gl)*sl2)/(2.*gl**3)
+#    egqle = np.exp(2*dt*(-gq + le))
+#    ebgqle = np.exp(dt*(-b - gq + le))
+#    e2le = np.exp(2*dt*le)
+#    c22  =        (e2m0*((1 + C00/2.)*(-(egqle/(b - gq + le)**2) - gq/(e2bt*(b + le)*(b - gq + le)**2) +\
+#              e2le/((b + le)*(b + gq + le)) + (4*ebgqle*gq)/((b - gq + le)**2*(b + gq + le))) +\
+#           C01*((2*egqle*f)/(b - gq + le)**3 + (2*f*gq)/(e2bt*(b + le)*(b - gq + le)**3) -\
+#              (2*dt*egqle*f)/(b - gq + le)**2 + (f*gq)/(e2bt*(b + le)**2*(b - gq + le)**2) -\
+#              (e2le*f)/((b + le)*(b + gq + le)**2) -\
+#              (4*ebgqle*f*gq)/((b - gq + le)**2*(b + gq + le)**2) -\
+#              (e2le*f)/((b + le)**2*(b + gq + le)) + (2*dt*e2le*f)/((b + le)*(b + gq + le)) -\
+#              (8*ebgqle*f*gq)/((b - gq + le)**3*(b + gq + le)) +\
+#              (4*dt*ebgqle*f*gq)/((b - gq + le)**2*(b + gq + le))) +\
+#           (C11*((-6*egqle*f**2)/(b - gq + le)**4 + (8*dt*egqle*f**2)/(b - gq + le)**3 -\
+#                (4*dt**2*egqle*f**2)/(b - gq + le)**2 + (2*e2le*f**2)/((b + le)*(b + gq + le)**3) +\
+#                (4*dt**2*ebgqle*f**2*gq)/((b - gq + le)**2*(b + gq + le)) -\
+#                (2*f*(-((e2le*f)/(b + le)**2) + (2*dt*e2le*f)/(b + le)))/(b + gq + le)**2 +\
+#                ((2*e2le*f**2)/(b + le)**3 - (4*dt*e2le*f**2)/(b + le)**2 +\
+#                   (4*dt**2*e2le*f**2)/(b + le))/(b + gq + le) -\
+#                (gq*((6*f**2)/((b + le)*(b - gq + le)**4) + (4*f**2)/((b + le)**2*(b - gq + le)**3) +\
+#                     (2*f**2)/((b + le)**3*(b - gq + le)**2)))/e2bt +\
+#                4*ebgqle*gq*((2*f**2)/((b - gq + le)**2*(b + gq + le)**3) +\
+#                   (4*f**2)/((b - gq + le)**3*(b + gq + le)**2) + (6*f**2)/((b - gq + le)**4*(b + gq + le))) +\
+#                8*dt*ebgqle*f*gq*(-(f/((b - gq + le)**2*(b + gq + le)**2)) -\
+#                   (2*f)/((b - gq + le)**3*(b + gq + le)))))/2.)*sq2)/(2.*gq)
+#    return c22 + C22*np.exp(-2*b*dt)
+
 def cov22(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
-    e2m0=np.exp(2*m0)
-    e2bt = np.exp(2*b*dt)
-    eglt=np.exp(-gl*dt)
+    eglt = np.exp(-gl*dt)
     f = (1-eglt)/(gl*dt)
     le = f*m1 + (1 - f)*ml + ((-3 - eglt**2 + 4*eglt + 2*dt*gl)*sl2)/(2.*gl**3)
-    egqle = np.exp(2*dt*(-gq + le))
-    ebgqle = np.exp(dt*(-b - gq + le))
-    e2le = np.exp(2*dt*le)
-    c22  =        (e2m0*((1 + C00/2.)*(-(egqle/(b - gq + le)**2) - gq/(e2bt*(b + le)*(b - gq + le)**2) +\
-              e2le/((b + le)*(b + gq + le)) + (4*ebgqle*gq)/((b - gq + le)**2*(b + gq + le))) +\
-           C01*((2*egqle*f)/(b - gq + le)**3 + (2*f*gq)/(e2bt*(b + le)*(b - gq + le)**3) -\
-              (2*dt*egqle*f)/(b - gq + le)**2 + (f*gq)/(e2bt*(b + le)**2*(b - gq + le)**2) -\
-              (e2le*f)/((b + le)*(b + gq + le)**2) -\
-              (4*ebgqle*f*gq)/((b - gq + le)**2*(b + gq + le)**2) -\
-              (e2le*f)/((b + le)**2*(b + gq + le)) + (2*dt*e2le*f)/((b + le)*(b + gq + le)) -\
-              (8*ebgqle*f*gq)/((b - gq + le)**3*(b + gq + le)) +\
-              (4*dt*ebgqle*f*gq)/((b - gq + le)**2*(b + gq + le))) +\
-           (C11*((-6*egqle*f**2)/(b - gq + le)**4 + (8*dt*egqle*f**2)/(b - gq + le)**3 -\
-                (4*dt**2*egqle*f**2)/(b - gq + le)**2 + (2*e2le*f**2)/((b + le)*(b + gq + le)**3) +\
-                (4*dt**2*ebgqle*f**2*gq)/((b - gq + le)**2*(b + gq + le)) -\
-                (2*f*(-((e2le*f)/(b + le)**2) + (2*dt*e2le*f)/(b + le)))/(b + gq + le)**2 +\
-                ((2*e2le*f**2)/(b + le)**3 - (4*dt*e2le*f**2)/(b + le)**2 +\
-                   (4*dt**2*e2le*f**2)/(b + le))/(b + gq + le) -\
-                (gq*((6*f**2)/((b + le)*(b - gq + le)**4) + (4*f**2)/((b + le)**2*(b - gq + le)**3) +\
-                     (2*f**2)/((b + le)**3*(b - gq + le)**2)))/e2bt +\
-                4*ebgqle*gq*((2*f**2)/((b - gq + le)**2*(b + gq + le)**3) +\
-                   (4*f**2)/((b - gq + le)**3*(b + gq + le)**2) + (6*f**2)/((b - gq + le)**4*(b + gq + le))) +\
-                8*dt*ebgqle*f*gq*(-(f/((b - gq + le)**2*(b + gq + le)**2)) -\
-                   (2*f)/((b - gq + le)**3*(b + gq + le)))))/2.)*sq2)/(2.*gq)
-    return c22 + C22*np.exp(-2*b*dt)
+    dle = f; t=dt
+    F =   (4*np.exp((b - gq + le)*t)*gq*(b + le) + np.exp(2*(b + le)*t)*(b - gq + le)**2 - gq*(b + gq + le) - \
+         np.exp(2*(b - gq + le)*t)*(b + le)*(b + gq + le))/(np.exp(2*b*t)*(b + le)*(b - gq + le)**2*(b + gq + le))
+    dF =  -((dle*(4*np.exp((b - gq + le)*t)*gq*(b + le) + np.exp(2*(b + le)*t)*(b - gq + le)**2 - gq*(b + gq + le) - \
+              np.exp(2*(b - gq + le)*t)*(b + le)*(b + gq + le)))/(np.exp(2*b*t)*(b + le)*(b - gq + le)**2*(b + gq + le)**2)) - \
+       (2*dle*(4*np.exp((b - gq + le)*t)*gq*(b + le) + np.exp(2*(b + le)*t)*(b - gq + le)**2 - gq*(b + gq + le) - \
+            np.exp(2*(b - gq + le)*t)*(b + le)*(b + gq + le)))/(np.exp(2*b*t)*(b + le)*(b - gq + le)**3*(b + gq + le)) - \
+       (dle*(4*np.exp((b - gq + le)*t)*gq*(b + le) + np.exp(2*(b + le)*t)*(b - gq + le)**2 - gq*(b + gq + le) - \
+            np.exp(2*(b - gq + le)*t)*(b + le)*(b + gq + le)))/(np.exp(2*b*t)*(b + le)**2*(b - gq + le)**2*(b + gq + le)) + \
+       (-(dle*gq) + 4*dle*np.exp((b - gq + le)*t)*gq - dle*np.exp(2*(b - gq + le)*t)*(b + le) + \
+          2*dle*np.exp(2*(b + le)*t)*(b - gq + le) - dle*np.exp(2*(b - gq + le)*t)*(b + gq + le) + \
+          4*dle*np.exp((b - gq + le)*t)*gq*(b + le)*t + 2*dle*np.exp(2*(b + le)*t)*(b - gq + le)**2*t - \
+          2*dle*np.exp(2*(b - gq + le)*t)*(b + le)*(b + gq + le)*t)/(np.exp(2*b*t)*(b + le)*(b - gq + le)**2*(b + gq + le))
+    ddF =  (((6*dle**2)/(np.exp(2*b*t)*(b + le)*(b - gq + le)**4) + (4*dle**2)/(np.exp(2*b*t)*(b + le)**2*(b - gq + le)**3) + \
+            (2*dle**2)/(np.exp(2*b*t)*(b + le)**3*(b - gq + le)**2))*\
+          (4*np.exp((b - gq + le)*t)*gq*(b + le) + np.exp(2*(b + le)*t)*(b - gq + le)**2 - gq*(b + gq + le) - \
+            np.exp(2*(b - gq + le)*t)*(b + le)*(b + gq + le)))/(b + gq + le) + \
+       2*((-2*dle)/(np.exp(2*b*t)*(b + le)*(b - gq + le)**3) - dle/(np.exp(2*b*t)*(b + le)**2*(b - gq + le)**2))*\
+        (-((dle*(4*np.exp((b - gq + le)*t)*gq*(b + le) + np.exp(2*(b + le)*t)*(b - gq + le)**2 - gq*(b + gq + le) - \
+                 np.exp(2*(b - gq + le)*t)*(b + le)*(b + gq + le)))/(b + gq + le)**2) + \
+          (-(dle*gq) + 4*dle*np.exp((b - gq + le)*t)*gq - dle*np.exp(2*(b - gq + le)*t)*(b + le) + \
+             2*dle*np.exp(2*(b + le)*t)*(b - gq + le) - dle*np.exp(2*(b - gq + le)*t)*(b + gq + le) + \
+             4*dle*np.exp((b - gq + le)*t)*gq*(b + le)*t + 2*dle*np.exp(2*(b + le)*t)*(b - gq + le)**2*t - \
+             2*dle*np.exp(2*(b - gq + le)*t)*(b + le)*(b + gq + le)*t)/(b + gq + le)) + \
+       ((2*dle**2*(4*np.exp((b - gq + le)*t)*gq*(b + le) + np.exp(2*(b + le)*t)*(b - gq + le)**2 - gq*(b + gq + le) - \
+               np.exp(2*(b - gq + le)*t)*(b + le)*(b + gq + le)))/(b + gq + le)**3 - \
+          (2*dle*(-(dle*gq) + 4*dle*np.exp((b - gq + le)*t)*gq - dle*np.exp(2*(b - gq + le)*t)*(b + le) + \
+               2*dle*np.exp(2*(b + le)*t)*(b - gq + le) - dle*np.exp(2*(b - gq + le)*t)*(b + gq + le) + \
+               4*dle*np.exp((b - gq + le)*t)*gq*(b + le)*t + 2*dle*np.exp(2*(b + le)*t)*(b - gq + le)**2*t - \
+               2*dle*np.exp(2*(b - gq + le)*t)*(b + le)*(b + gq + le)*t))/(b + gq + le)**2 + \
+          (2*dle**2*np.exp(2*(b + le)*t) - 2*dle**2*np.exp(2*(b - gq + le)*t) + 8*dle**2*np.exp((b - gq + le)*t)*gq*t + \
+             8*dle**2*np.exp(2*(b + le)*t)*(b - gq + le)*t - \
+             4*dle*np.exp(2*(b - gq + le)*t)*(dle*(b + le) + dle*(b + gq + le))*t + \
+             4*dle**2*np.exp((b - gq + le)*t)*gq*(b + le)*t**2 + 4*dle**2*np.exp(2*(b + le)*t)*(b - gq + le)**2*t**2 - \
+             4*dle**2*np.exp(2*(b - gq + le)*t)*(b + le)*(b + gq + le)*t**2)/(b + gq + le))/\
+        (np.exp(2*b*t)*(b + le)*(b - gq + le)**2)
+    return sq2/(2*gq)*np.exp(2*m0)*(F*(1+C00/2)+dF*C01+ddF*C11/2)+C22*np.exp(-2*b*dt)
+
 def new_cov(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
     """Start from P(z_t|D_t)= N(m;C) and find P(z_{t+dt}|D_t), the covariance here"""
     eglt = np.exp(-gl*dt)
