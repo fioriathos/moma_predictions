@@ -5,7 +5,7 @@ import pandas as pd
 import time
 from pathos.multiprocessing import ProcessingPool as Pool
 from scipy.stats import linregress
-
+import scipy.integrate as integrate
 ######
 ###### Inverse and |determinatn| of 4x4 symmetric matrix
 ######
@@ -86,6 +86,7 @@ def det(Q00,Q01,Q02,Q03,Q11,Q12,Q13,Q22,Q23,Q33):
 # We could also write them in matrix form so that a part stay fixed (not to be continuously computed) and then use matrix multiplication (as we did for lengths)
 #mean
 def meangt(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
+    """Mean gt computed with approximations"""
     em0 = np.exp(m0)
     ebt = np.exp(b*dt)
     eglt = np.exp(-dt*gl)
@@ -121,7 +122,7 @@ def cov23(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq
     le = f*m1 + (1 - f)*ml + ((-3 - eglt**2 + 4*eglt + 2*dt*gl)*sl2)/(2.*gl**3)
     e2gqlet = np.exp(dt*(-2*gq + le))
     elet = np.exp(dt*le)
-    cv23 = (em0*((-ebgqt + e2gqlet)/(b - gq + le) +\
+    cv23_term1 = (em0*((-ebgqt + e2gqlet)/(b - gq + le) +\
             (-ebgqt + elet)/(b + gq + le))*sq2)/(2.*gq) +\
        (C00*em0*((-ebgqt + e2gqlet)/(b - gq + le) +\
             (-ebgqt + elet)/(b + gq + le))*sq2)/(4.*gq) +\
@@ -135,7 +136,7 @@ def cov23(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq
             (2*(-ebgqt + elet)*f**2)/(b + gq + le)**3 -\
             (2*dt*elet*f**2)/(b + gq + le)**2 +\
             (dt**2*elet*f**2)/(b + gq + le))*sq2)/(4.*gq)
-    return cv23
+    return cv23_term1 + C23*np.exp(-dt*(b+gq))
 def cov12(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
     em0     = np.exp(m0)
     ebglt =    np.exp(dt*(-b - gl))
@@ -148,7 +149,7 @@ def cov12(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq
     egqlet = np.exp(dt*(-gq + le))
     e2gllet = np.exp(dt*(-2*gl + le))
     egllet = np.exp(dt*(-gl + le))
-    cv21 =         em0*((C03*(-2*(-ebglt + eglgqlet)/(b - gq + le) + (-ebglt + e2glgqlet)/(b - gl - gq + le) +\
+    cv21_term1 =  em0*((C03*(-2*(-ebglt + eglgqlet)/(b - gq + le) + (-ebglt + e2glgqlet)/(b - gl - gq + le) +\
               (-ebglt + egqlet)/(b + gl - gq + le + m1)) + C13*((2*(-ebglt + eglgqlet)*f)/(b - gq + le)**2 -\
               (2*dt*eglgqlet*f)/(b - gq + le) - ((-ebglt + e2glgqlet)*f)/\
                (b - gl - gq + le)**2 + (dt*e2glgqlet*f)/(b - gl - gq + le) -\
@@ -185,7 +186,7 @@ def cov12(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq
                    (2*(-ebglt + elet)*f**2)/(b + gl + le)**3 - \
                    (2*dt*elet*f**2)/(b + gl + le)**2 + \
                    (dt**2*elet*f**2)/(b + gl + le))*mq))/2.)*sl2)/(2.*gl**2)
-    return cv21
+    return cv21_term1 + C12*np.exp(-dt*(b+gl))
 def cv20(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
     em0 = np.exp(m0)
     eglt = np.exp(-(dt*gl))
@@ -255,7 +256,7 @@ def cv20(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2
                       (4*f*(dt*elet*f + dt*elet*f*(-1 + dt*(b + le))))/(b + le)**3 +\
                       (2*dt**2*elet*f**2 + dt**2*elet*f**2*(-1 + dt*(b + le)))/(b + le)**2))*mq))/2.)*sl2)/\
        (2.*gl**3)
-    return cv20
+    return cv20 + C02*np.exp(-b*dt)+C12*np.exp(-b*dt)*(1-np.exp(-gl*dt))/gl
 def cov22(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
     e2m0=np.exp(2*m0)
     e2bt = np.exp(2*b*dt)
@@ -286,7 +287,7 @@ def cov22(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq
                    (4*f**2)/((b - gq + le)**3*(b + gq + le)**2) + (6*f**2)/((b - gq + le)**4*(b + gq + le))) +\
                 8*dt*ebgqle*f*gq*(-(f/((b - gq + le)**2*(b + gq + le)**2)) -\
                    (2*f)/((b - gq + le)**3*(b + gq + le)))))/2.)*sq2)/(2.*gq)
-    return c22
+    return c22 + C22*np.exp(-2*b*dt)
 def new_cov(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
     """Start from P(z_t|D_t)= N(m;C) and find P(z_{t+dt}|D_t), the covariance here"""
     eglt = np.exp(-gl*dt)
@@ -302,16 +303,10 @@ def new_cov(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,
     nC11 = C11*eglt**2 + vl
     nC13 = clq + C13*eglt*egqt
     nC33 = vq + C33*egqt**2
-    #nC00 = C00+2*C01*(1-eglt)/gl+C11*((1-eglt)/gl)**2+sl2/(2*gl**3)*(2*gl*dt-3+4*eglt-eglt**2)
-    #nC01 =(eglt*(C11-C11*eglt+C01*gl))/gl+sl2/(2*gl**2)*(1-eglt)**2
     nC02 = cv20(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b)
-    #nC03 = C03*egqt + C13*(1-eglt)/gl*egqt
-    #nC11 = C11*eglt**2+sl2/(2*gl)*(1-eglt**2)
     nC12 = cov12(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b)
-    #nC13 = C13*eglt**2*egqt**2
     nC22 = cov22(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b)
     nC23 = cov23(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b)
-    #nC33 = C33*egqt**2 + sq2/(2*gq)*(1-egqt**2)
     return nC00,nC01,nC02,nC03,nC11,nC12,nC13,nC22,nC23,nC33
 def new_mean_cov(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
     nm = new_mean(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b)
