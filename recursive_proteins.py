@@ -87,24 +87,24 @@ def det(Q00,Q01,Q02,Q03,Q11,Q12,Q13,Q22,Q23,Q33):
 #mean
 def meangt(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
     """Mean gt computed with approximations"""
-    em0 = np.exp(m0)
-    ebt = np.exp(b*dt)
-    eglt = np.exp(-dt*gl)
+    eglt = np.exp(-gl*dt)
     f = (1-eglt)/(gl*dt)
     le = f*m1 + (1 - f)*ml + ((-3 - eglt**2 + 4*eglt + 2*dt*gl)*sl2)/(2.*gl**3)
-    elet = np.exp(dt*le)
-    egqlet =np.exp(dt*(-gq + le))
-    meang =  (C03*em0*(-ebt + egqlet))/(b-gq +le)+\
-       C13*(-((em0*(-ebt + egqlet)*f)/(b - gq + le)**2) +\
-          (dt*egqlet*em0*f)/(b - gq + le)) + m2/ebt +\
-       (em0*(-ebt + elet)*mq)/(b + le) +\
-       (C00*em0*(-ebt + elet)*mq)/(2.*(b + le)) +\
-       C01*(-((em0*(-ebt + elet)*f*mq)/(b + le)**2) +\
-          (dt*elet*em0*f*mq)/(b + le)) +\
-       (C11*((2*em0*(-ebt + elet)*f**2*mq)/(b + le)**3 -\
-            (2*dt*elet*em0*f**2*mq)/(b + le)**2 +\
-            (dt**2*elet*em0*f**2*mq)/(b + le)))/2.
-    return meang
+    dle = f
+    F = (np.exp(m0)*(-np.exp(-(b*dt)) + np.exp(dt*(-gq + le)))*(m3 - mq))/(b - gq + le) + (np.exp(m0)*(-np.exp(-(b*dt)) + np.exp(dt*le))*mq)/(b + le)
+    G = (np.exp(m0)*(-np.exp(-(b*dt)) + np.exp(dt*(-gq + le))))/(b - gq + le)
+    d2Fx = F
+    d2Fl = (2*dle**2*np.exp(m0)*(-np.exp(-(b*dt)) + np.exp(dt*(-gq + le)))*(m3 - mq))/(b - gq + le)**3 -\
+       (2*dle**2*dt*np.exp(dt*(-gq + le) + m0)*(m3 - mq))/(b - gq + le)**2 +\
+       (dle**2*dt**2*np.exp(dt*(-gq + le) + m0)*(m3 - mq))/(b - gq + le) +\
+       (2*dle**2*np.exp(m0)*(-np.exp(-(b*dt)) + np.exp(dt*le))*mq)/(b + le)**3 - (2*dle**2*dt*np.exp(dt*le + m0)*mq)/(b + le)**2 +\
+       (dle**2*dt**2*np.exp(dt*le + m0)*mq)/(b + le)
+    d2Fxl = -((dle*np.exp(m0)*(-np.exp(-(b*dt)) + np.exp(dt*(-gq + le)))*(m3 - mq))/(b - gq + le)**2) +\
+       (dle*dt*np.exp(dt*(-gq + le) + m0)*(m3 - mq))/(b - gq + le) - (dle*np.exp(m0)*(-np.exp(-(b*dt)) + np.exp(dt*le))*mq)/(b + le)**2 +\
+       (dle*dt*np.exp(dt*le + m0)*mq)/(b + le)
+    dGl = -((dle*np.exp(m0)*(-np.exp(-(b*dt)) + np.exp(dt*(-gq + le))))/(b - gq + le)**2) + (dle*dt*np.exp(dt*(-gq + le) + m0))/(b - gq + le)
+    dGx = (np.exp(m0)*(-np.exp(-(b*dt)) + np.exp(dt*(-gq + le))))/(b - gq + le)
+    return m2*np.exp(-b*dt)+ F + d2Fx*C00/2+d2Fl*C11/2+d2Fxl*C01+dGl*C13+dGx*C03
 def new_mean(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
     """Start from P(z_t|D_t)= N(m;C) and find P(z_{t+dt}|D_t), the mean here"""
     #Seems ok
@@ -114,30 +114,6 @@ def new_mean(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq
     nm2 = meangt(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b)
     return nm0,nm1,nm2,nm3
 #Covariance
-#def cov23(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
-#   ERIK FORMULA
-#    em0 = np.exp(m0)
-#    ebgqt=np.exp(dt*(-b - gq))
-#    eglt = np.exp(-dt*gl)
-#    f = (1-eglt)/(gl*dt)
-#    le = f*m1 + (1 - f)*ml + ((-3 - eglt**2 + 4*eglt + 2*dt*gl)*sl2)/(2.*gl**3)
-#    e2gqlet = np.exp(dt*(-2*gq + le))
-#    elet = np.exp(dt*le)
-#    cv23_term1 = (em0*((-ebgqt + e2gqlet)/(b - gq + le)*(-1) +\
-#            (-ebgqt + elet)/(b + gq + le))*sq2)/(2.*gq) +\
-#       (C00*em0*((-ebgqt + e2gqlet)/(b - gq + le)*(-1) +\
-#            (-ebgqt + elet)/(b + gq + le))*sq2)/(4.*gq) +\
-#       (C01*em0*(-(((-ebgqt + e2gqlet)*f)/\
-#               (b - gq + le)**2)*(-1) + (dt*e2gqlet*f)/(b - gq + le)*(-1) -\
-#            ((-ebgqt + elet)*f)/(b + gq + le)**2 +\
-#            (dt*elet*f)/(b + gq + le))*sq2)/(2.*gq) +\
-#       (C11*em0*((2*(-ebgqt + e2gqlet)*f**2)/\
-#             (b - gq + le)**3*(-1)- (2*dt*e2gqlet*f**2)/(b - gq + le)**2*(-1)+\
-#            (dt**2*e2gqlet*f**2)/(b - gq + le)*(-1) +\
-#            (2*(-ebgqt + elet)*f**2)/(b + gq + le)**3 -\
-#            (2*dt*elet*f**2)/(b + gq + le)**2 +\
-#            (dt**2*elet*f**2)/(b + gq + le))*sq2)/(4.*gq)
-#    return cv23_term1 + C23*np.exp(-dt*(b+gq))
 def cov23(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
     eglt = np.exp(-gl*dt)
     f = (1-eglt)/(gl*dt)
@@ -155,57 +131,6 @@ def cov23(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq
            (dle**2*np.exp(t*(b + gq + le))*t**2)/(b + gq + le)))/(2.*gq)
     return cvz0 + C00/2*cvz0+ddcv_l0*C11/2+C01*dcv_l0+C23*np.exp(-(b+gq)*t)
 
-#def cov12(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
-#ERIK FORMULA
-#    em0     = np.exp(m0)
-#    ebglt =    np.exp(dt*(-b - gl))
-#    eglt = np.exp(-dt*gl)
-#    f = (1-eglt)/(gl*dt)
-#    le = f*m1 + (1 - f)*ml + ((-3 - eglt**2 + 4*eglt + 2*dt*gl)*sl2)/(2.*gl**3)
-#    eglgqlet = np.exp(dt*(-gl - gq + le))
-#    e2glgqlet = np.exp(dt*(-2*gl - gq + le))
-#    elet = np.exp(dt*le)
-#    egqlet = np.exp(dt*(-gq + le))
-#    e2gllet = np.exp(dt*(-2*gl + le))
-#    egllet = np.exp(dt*(-gl + le))
-#    cv21_term1 =  em0*((C03*(-2*(-ebglt + eglgqlet)/(b - gq + le) + (-ebglt + e2glgqlet)/(b - gl - gq + le) +\
-#              (-ebglt + egqlet)/(b + gl - gq + le + m1)) + C13*((2*(-ebglt + eglgqlet)*f)/(b - gq + le)**2 -\
-#              (2*dt*eglgqlet*f)/(b - gq + le) - ((-ebglt + e2glgqlet)*f)/\
-#               (b - gl - gq + le)**2 + (dt*e2glgqlet*f)/(b - gl - gq + le) -\
-#              ((-ebglt + egqlet)*(1 + f))/ (b + gl - gq + le + m1)**2 +\
-#              (dt*egqlet*f)/(b + gl - gq + le + m1)) + (1 + C00/2.)*(((-2*(-ebglt + eglgqlet))/\
-#                  (b - gq + le) + (-ebglt + e2glgqlet)/(b - gl - gq + le) +\
-#                 (-ebglt + egqlet)/(b + gl - gq + le + m1))*(m3 - mq) + ((-2*(-ebglt + egllet))/(b + le) +\
-#                 (-ebglt + e2gllet)/(b - gl + le) +(-ebglt + elet)/(b + gl + le))*mq) +C01*(((2*(-ebglt + eglgqlet)*f)/\
-#                  (b - gq + le)**2 - (2*dt*eglgqlet*f)/(b - gq + le) -((-ebglt + e2glgqlet)*f)/\
-#                  (b - gl - gq + le)**2 +(dt*e2glgqlet*f)/(b - gl - gq + le) -\
-#                 ((-ebglt + egqlet)*(1 + f))/(b + gl - gq + le + m1)**2 +\
-#                 (dt*egqlet*f)/(b + gl - gq + le + m1))*(m3 - mq) +((2*(-ebglt + egllet)*f)/(b + le)**2 -\
-#                 (2*dt*egllet*f)/(b + le) -((-ebglt + e2gllet)*f)/(b - gl + le)**2 +\
-#                 (dt*e2gllet*f)/(b - gl + le) -((-ebglt + elet)*f)/(b + gl + le)**2 +\
-#                 (dt*elet*f)/(b + gl + le))*mq) +(C11*(((-4*(-ebglt + eglgqlet)*f**2)/\
-#                    (b - gq + le)**3 + \
-#                   (4*dt*eglgqlet*f**2)/(b - gq + le)**2 -\
-#                   (2*dt**2*eglgqlet*f**2)/(b - gq + le) +\
-#                   (2*(-ebglt + e2glgqlet)*f**2)/\
-#                    (b - gl - gq + le)**3 -\
-#                   (2*dt*e2glgqlet*f**2)/(b - gl - gq + le)**2 +\
-#                   (dt**2*e2glgqlet*f**2)/(b - gl - gq + le) + \
-#                   (2*(-ebglt + egqlet)*(1 + f)**2)/\
-#                    (b + gl - gq + le + m1)**3 - \
-#                   (2*dt*egqlet*f*(1 + f))/(b + gl - gq + le + m1)**2 +\
-#                   (dt**2*egqlet*f**2)/(b + gl - gq + le + m1))*(m3 - mq) +\
-#                ((-4*(-ebglt + egllet)*f**2)/(b + le)**3 + \
-#                   (4*dt*egllet*f**2)/(b + le)**2 - \
-#                   (2*dt**2*egllet*f**2)/(b + le) + \
-#                   (2*(-ebglt + e2gllet)*f**2)/\
-#                    (b - gl + le)**3 - \
-#                   (2*dt*e2gllet*f**2)/(b - gl + le)**2 +\
-#                   (dt**2*e2gllet*f**2)/(b - gl + le) + \
-#                   (2*(-ebglt + elet)*f**2)/(b + gl + le)**3 - \
-#                   (2*dt*elet*f**2)/(b + gl + le)**2 + \
-#                   (dt**2*elet*f**2)/(b + gl + le))*mq))/2.)*sl2)/(2.*gl**2)
-#    return cv21_term1 + C12*np.exp(-dt*(b+gl))
 def cov12(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
     """X=fun(0), Y=fun(gq)"""
     eglt = np.exp(-gl*dt)
@@ -238,77 +163,6 @@ def cov12(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq
     ddA = mq*ddfun_l0(0)+(m3-mq)*ddfun_l0(gq)
     return sl2/(2*gl**2)*np.exp(m0)*(A*(1+C00/2)+dA*C01+ddA*C11/2\
                                     +C03*fun(gq)+C13*dfun_l0(gq))+C12*np.exp(-(b+gl)*dt)
-#def cv20(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
-#    em0 = np.exp(m0)
-#    eglt = np.exp(-(dt*gl))
-#    ebt = np.exp(-(b*dt))
-#    ebglt = np.exp(dt*(-b - gl))
-#    f = (1-eglt)/(gl*dt)
-#    le = f*m1 + (1 - f)*ml + ((-3 - eglt**2 + 4*eglt + 2*dt*gl)*sl2)/(2.*gl**3)
-#    egqle = np.exp(dt*(-gq + le))
-#    elet = np.exp(dt*le)
-#    egllet = np.exp(dt*(-gl + le))
-#    eglgqlet = np.exp(dt*(-gl - gq + le))
-#    cv20 = (em0*(C03*((-2*(1 - eglt)*(-ebt + egqle))/(b - gq + le) +\
-#              ((2 - eglt)*(-ebt + eglgqlet))/(b - gl - gq + le) -\
-#              (-ebglt + egqle)/(b + gl - gq + le) +\
-#              (2*gl*(ebt + egqle*(-1 + dt*(b - gq + le))))/(b - gq + le)**2) +\
-#           C13*((2*(1 - eglt)*(-ebt + egqle)*f)/(b - gq + le)**2 -\
-#              (2*dt*egqle*(1 - eglt)*f)/(b - gq + le) -\
-#              ((2 - eglt)*(-ebt + eglgqlet)*f)/(b - gl - gq + le)**2 +\
-#              (dt*eglgqlet*(2 - eglt)*f)/(b - gl - gq + le) +\
-#              ((-ebglt + egqle)*f)/(b + gl - gq + le)**2 -\
-#              (dt*egqle*f)/(b + gl - gq + le) -\
-#              (4*f*gl*(ebt + egqle*(-1 + dt*(b - gq + le))))/(b - gq + le)**3 +\
-#              (2*gl*(dt*egqle*f + dt*egqle*f*(-1 + dt*(b - gq + le))))/(b - gq + le)**2) +\
-#           (1 + C00/2.)*(((-2*(1 - eglt)*(-ebt + egqle))/(b - gq + le) +\
-#                 ((2 - eglt)*(-ebt + eglgqlet))/(b - gl - gq + le) -\
-#                 (-ebglt + egqle)/(b + gl - gq + le) +\
-#                 (2*gl*(ebt + egqle*(-1 + dt*(b - gq + le))))/(b - gq + le)**2)*(m3 - mq) +\
-#              ((-2*(1 - eglt)*(-ebt + elet))/(b + le) +\
-#                 ((2 - eglt)*(-ebt + egllet))/(b - gl + le) -\
-#                 (-ebglt + elet)/(b + gl + le) +\
-#                 (2*gl*(ebt + elet*(-1 + dt*(b + le))))/(b + le)**2)*mq) +\
-#           C01*(((2*(1 - eglt)*(-ebt + egqle)*f)/(b - gq + le)**2 -\
-#                 (2*dt*egqle*(1 - eglt)*f)/(b - gq + le) -\
-#                 ((2 - eglt)*(-ebt + eglgqlet)*f)/(b - gl - gq + le)**2 +\
-#                 (dt*eglgqlet*(2 - eglt)*f)/(b - gl - gq + le) +\
-#                 ((-ebglt + egqle)*f)/(b + gl - gq + le)**2 -\
-#                 (dt*egqle*f)/(b + gl - gq + le) -\
-#                 (4*f*gl*(ebt + egqle*(-1 + dt*(b - gq + le))))/(b - gq + le)**3 +\
-#                 (2*gl*(dt*egqle*f + dt*egqle*f*(-1 + dt*(b - gq + le))))/(b - gq + le)**2)*\
-#               (m3 - mq) + ((2*(1 - eglt)*(-ebt + elet)*f)/(b + le)**2 -\
-#                 (2*dt*elet*(1 - eglt)*f)/(b + le) -\
-#                 ((2 - eglt)*(-ebt + egllet)*f)/(b - gl + le)**2 +\
-#                 (dt*egllet*(2 - eglt)*f)/(b - gl + le) +\
-#                 ((-ebglt + elet)*f)/(b + gl + le)**2 - (dt*elet*f)/(b + gl + le) -\
-#                 (4*f*gl*(ebt + elet*(-1 + dt*(b + le))))/(b + le)**3 +\
-#                 (2*gl*(dt*elet*f + dt*elet*f*(-1 + dt*(b + le))))/(b + le)**2)*mq) +\
-#           (C11*(((2*(2 - eglt)*(-ebt + eglgqlet)*f**2)/(b - gl - gq + le)**3 -\
-#                   (2*dt*eglgqlet*(2 - eglt)*f**2)/(b - gl - gq + le)**2 +\
-#                   (dt**2*eglgqlet*(2 - eglt)*f**2)/(b - gl - gq + le) -\
-#                   (2*(-ebglt + egqle)*f**2)/(b + gl - gq + le)**3 +\
-#                   (2*dt*egqle*f**2)/(b + gl - gq + le)**2 -\
-#                   (dt**2*egqle*f**2)/(b + gl - gq + le) -\
-#                   2*(1 - eglt)*((2*(-ebt + egqle)*f**2)/(b - gq + le)**3 -\
-#                      (2*dt*egqle*f**2)/(b - gq + le)**2 + (dt**2*egqle*f**2)/(b - gq + le)) +\
-#                   2*gl*((6*f**2*(ebt + egqle*(-1 + dt*(b - gq + le))))/(b - gq + le)**4 -\
-#                      (4*f*(dt*egqle*f + dt*egqle*f*(-1 + dt*(b - gq + le))))/(b - gq + le)**3 +\
-#                      (2*dt**2*egqle*f**2 + dt**2*egqle*f**2*(-1 + dt*(b - gq + le)))/\
-#                       (b - gq + le)**2))*(m3 - mq) +\
-#                ((2*(2 - eglt)*(-ebt + egllet)*f**2)/(b - gl + le)**3 -\
-#                   (2*dt*egllet*(2 - eglt)*f**2)/(b - gl + le)**2 +\
-#                   (dt**2*egllet*(2 - eglt)*f**2)/(b - gl + le) -\
-#                   (2*(-ebglt + elet)*f**2)/(b + gl + le)**3 + (2*dt*elet*f**2)/(b + gl + le)**2 -\
-#                   (dt**2*elet*f**2)/(b + gl + le) -\
-#                   2*(1 - eglt)*((2*(-ebt + elet)*f**2)/(b + le)**3 -\
-#                      (2*dt*elet*f**2)/(b + le)**2 + (dt**2*elet*f**2)/(b + le)) +\
-#                   2*gl*((6*f**2*(ebt + elet*(-1 + dt*(b + le))))/(b + le)**4 -\
-#                      (4*f*(dt*elet*f + dt*elet*f*(-1 + dt*(b + le))))/(b + le)**3 +\
-#                      (2*dt**2*elet*f**2 + dt**2*elet*f**2*(-1 + dt*(b + le)))/(b + le)**2))*mq))/2.)*sl2)/\
-#       (2.*gl**3)
-#    return cv20 + C02*np.exp(-b*dt)+C12*np.exp(-b*dt)*(1-np.exp(-gl*dt))/gl
-
 def cv20(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
     eglt = np.exp(-gl*dt)
     f = (1-eglt)/(gl*dt)
@@ -350,40 +204,6 @@ def cv20(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2
     ddA = mq*ddfun(0)+(m3-mq)*ddfun(gq)
     return sl2/(2*gl**3)*np.exp(m0)*(A*(1+C00/2)+dA*C01+ddA*C11/2\
            +C03*fun(gq)+C13*dfun(gq))+C02*np.exp(-b*dt)+C12*(1-np.exp(-gl*dt))/gl*np.exp(-b*dt)
-
-
-#def cov22(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
-#    e2m0=np.exp(2*m0)
-#    e2bt = np.exp(2*b*dt)
-#    eglt=np.exp(-gl*dt)
-#    f = (1-eglt)/(gl*dt)
-#    le = f*m1 + (1 - f)*ml + ((-3 - eglt**2 + 4*eglt + 2*dt*gl)*sl2)/(2.*gl**3)
-#    egqle = np.exp(2*dt*(-gq + le))
-#    ebgqle = np.exp(dt*(-b - gq + le))
-#    e2le = np.exp(2*dt*le)
-#    c22  =        (e2m0*((1 + C00/2.)*(-(egqle/(b - gq + le)**2) - gq/(e2bt*(b + le)*(b - gq + le)**2) +\
-#              e2le/((b + le)*(b + gq + le)) + (4*ebgqle*gq)/((b - gq + le)**2*(b + gq + le))) +\
-#           C01*((2*egqle*f)/(b - gq + le)**3 + (2*f*gq)/(e2bt*(b + le)*(b - gq + le)**3) -\
-#              (2*dt*egqle*f)/(b - gq + le)**2 + (f*gq)/(e2bt*(b + le)**2*(b - gq + le)**2) -\
-#              (e2le*f)/((b + le)*(b + gq + le)**2) -\
-#              (4*ebgqle*f*gq)/((b - gq + le)**2*(b + gq + le)**2) -\
-#              (e2le*f)/((b + le)**2*(b + gq + le)) + (2*dt*e2le*f)/((b + le)*(b + gq + le)) -\
-#              (8*ebgqle*f*gq)/((b - gq + le)**3*(b + gq + le)) +\
-#              (4*dt*ebgqle*f*gq)/((b - gq + le)**2*(b + gq + le))) +\
-#           (C11*((-6*egqle*f**2)/(b - gq + le)**4 + (8*dt*egqle*f**2)/(b - gq + le)**3 -\
-#                (4*dt**2*egqle*f**2)/(b - gq + le)**2 + (2*e2le*f**2)/((b + le)*(b + gq + le)**3) +\
-#                (4*dt**2*ebgqle*f**2*gq)/((b - gq + le)**2*(b + gq + le)) -\
-#                (2*f*(-((e2le*f)/(b + le)**2) + (2*dt*e2le*f)/(b + le)))/(b + gq + le)**2 +\
-#                ((2*e2le*f**2)/(b + le)**3 - (4*dt*e2le*f**2)/(b + le)**2 +\
-#                   (4*dt**2*e2le*f**2)/(b + le))/(b + gq + le) -\
-#                (gq*((6*f**2)/((b + le)*(b - gq + le)**4) + (4*f**2)/((b + le)**2*(b - gq + le)**3) +\
-#                     (2*f**2)/((b + le)**3*(b - gq + le)**2)))/e2bt +\
-#                4*ebgqle*gq*((2*f**2)/((b - gq + le)**2*(b + gq + le)**3) +\
-#                   (4*f**2)/((b - gq + le)**3*(b + gq + le)**2) + (6*f**2)/((b - gq + le)**4*(b + gq + le))) +\
-#                8*dt*ebgqle*f*gq*(-(f/((b - gq + le)**2*(b + gq + le)**2)) -\
-#                   (2*f)/((b - gq + le)**3*(b + gq + le)))))/2.)*sq2)/(2.*gq)
-#    return c22 + C22*np.exp(-2*b*dt)
-
 def cov22(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
     eglt = np.exp(-gl*dt)
     f = (1-eglt)/(gl*dt)
@@ -612,23 +432,23 @@ def cell_division_likelihood_and_grad(m0,m1,m2,m3,IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,
     s = (m0-np.log(2),m1,m2/2,m3)
     return s,S
 #------------------ OBJECTIVE OVER CELL CYCLE/ LANE AND TOTAL-----------------------------------
-def obj_and_grad_1cc(W,ml,gl,sl2,mq,gq,sq2,sx2,sg2,sxd2,sgd2,s0,s1,s2,s3,IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33,dt):
+def obj_and_grad_1cc(W,ml,gl,sl2,mq,gq,sq2,sx2,sg2,sxd2,sgd2,s0,s1,s2,s3,IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33,dt,b):
     """To check"""
     # p(z_0|D_0)
     nm,PC = posteriori_matrices(W[0,0],W[0,1],s0,s1,s2,s3,IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33,sx2,sg2)
     ##### p(D_0)
     ll = log_likelihood(W[0,0],W[0,1],s0,s1,s2,s3,IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33,PC[0],PC[1],PC[2],PC[3],PC[4],PC[5],PC[6],PC[7],PC[8],PC[9],sx2,sg2)
-    for j in range(1,W.shape[1]):
+    for j in range(1,W.shape[0]):
         ###### P(z_{t+dt}|D_t)
         m,Q = new_mean_cov(nm[0],nm[1],nm[2],nm[3],PC[0],PC[1],PC[2],PC[3],PC[4],PC[5],PC[6],PC[7],PC[8],PC[9],ml,gl,sl2,mq,gq,sq2,dt,b)
         ##### P(z_{t+dt}|D_{t+dt}) = N(b',B')
-        IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33 = inverse(Q[0],Q[1],Q[2],Q[3],Q[4],Q[5],Q[6],Q[7],Q[8],Q[9])
-        nm,PC = posteriori_matrices(W[0,0],W[0,1],m[0],m[1],m[2],m[3],IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33 ,sx2,sg2)
+        IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33 = inverseQ(Q[0],Q[1],Q[2],Q[3],Q[4],Q[5],Q[6],Q[7],Q[8],Q[9])
+        nm,PC = posteriori_matrices(W[j,0],W[j,1],m[0],m[1],m[2],m[3],IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33 ,sx2,sg2)
         ##### Likelihood
-        ll += log_likelihood(W[0,0],W[0,1],m[0],m[1],m[2],m[3],IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33,PC[0],PC[1],PC[2],PC[3],PC[4],PC[5],PC[6],PC[7],PC[8],PC[9],sx2,sg2)
+        ll += log_likelihood(W[j,0],W[j,1],m[0],m[1],m[2],m[3],IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33,PC[0],PC[1],PC[2],PC[3],PC[4],PC[5],PC[6],PC[7],PC[8],PC[9],sx2,sg2)
     # Predict for daughter cell
     m,Q = new_mean_cov(nm[0],nm[1],nm[2],nm[3],PC[0],PC[1],PC[2],PC[3],PC[4],PC[5],PC[6],PC[7],PC[8],PC[9],ml,gl,sl2,mq,gq,sq2,dt,b)
-    IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33 = inverse(Q[0],Q[1],Q[2],Q[3],Q[4],Q[5],Q[6],Q[7],Q[8],Q[9])
+    IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33 = inverseQ(Q[0],Q[1],Q[2],Q[3],Q[4],Q[5],Q[6],Q[7],Q[8],Q[9])
     # Find next cell initial conditions (9% asym div)
     s, S = cell_division_likelihood_and_grad(m[0],m[1],m[2],m[3],IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33,sxd2,sgd2)
     return -ll, s, S
@@ -682,32 +502,29 @@ def grad_obj_wrap(x,in_dic):
     return grad_obj_total(mlam,gamma,sl2,sm2,reind_v,\
                           dat_v,s,S,grad_matS,dt,rescale,sd2,nproc=10)
 #-------------------PREDICTIONS-------------------------- 
-def inverse(A): 
-    """Inverse a 2x2 matrix"""
-    assert A.shape==(2,2)
-    return np.array([[A[1,1],-A[0,1]],[-A[1,0],A[0,0]]])\
-            /(A[0,0]*A[1,1]-A[0,1]*A[1,0])
-def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,rescale,sd2):
-    """Return optiman length and growth (z) and std as erro """
+def predictions_1cc(W,ml,gl,sl2,mq,gq,sq2,sx2,sg2,sxd2,sgd2,s0,s1,s2,s3,IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33,dt,b):
+    """Return optimal vector z and std over 1 cc"""
+    assert W.shape[1]==2
     z = []; err_z=[]
-    #### Initialize parameters for recurrence
-    F, A, a = parameters(gamma,dt,mlam,sl2)
-    ##### P(z_0|x_0^m)
-    b,B = posteriori_matrices(W[0,0],s,S,sm2)
-    z.append(np.array(b)); err_z.append(np.sqrt(np.array([B[0,0],B[1,1]])))
-    for j in range(1,W.shape[1]):
-       ###### P(z_{t+dt}|D_t) = N(m,Q))
-        m,Q = new_mean_cov(b,B,F,A,a)
+    # p(z_0|D_0)
+    nm,PC = posteriori_matrices(W[0,0],W[0,1],s0,s1,s2,s3,IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33,sx2,sg2)
+    z.append(nm); err_z.append(np.sqrt(np.array([PC[0],PC[4],PC[7],PC[9]])))
+    ##### p(D_0)
+    for j in range(1,W.shape[0]):
+        ###### P(z_{t+dt}|D_t)
+        m,Q = new_mean_cov(nm[0],nm[1],nm[2],nm[3],PC[0],PC[1],PC[2],PC[3],PC[4],PC[5],PC[6],PC[7],PC[8],PC[9],ml,gl,sl2,mq,gq,sq2,dt,b)
         ##### P(z_{t+dt}|D_{t+dt}) = N(b',B')
-        b,B = posteriori_matrices(W[0,j],m,Q,sm2)
-        ##### Optimal predicitons 
-        #InvB = inverse(B)
-        z.append(np.array(b)); err_z.append(np.sqrt(np.array([B[0,0],B[1,1]])))
-    # Find next cell intial conditions
-    m,Q = new_mean_cov(b,B,F,A,a)
-    # Find next cell initial conditions
-    s,S= cell_division_likelihood_and_grad(m,Q,None,sd2,rescale,grad=False)
-    return z, err_z, s, S
+        IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33 = inverseQ(Q[0],Q[1],Q[2],Q[3],Q[4],Q[5],Q[6],Q[7],Q[8],Q[9])
+        nm,PC = posteriori_matrices(W[j,0],W[j,1],m[0],m[1],m[2],m[3],IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33 ,sx2,sg2)
+        z.append(nm); err_z.append(np.sqrt(np.array([PC[0],PC[4],PC[7],PC[9]])))
+        ##### Likelihood
+    # Predict for daughter cell
+    m,Q = new_mean_cov(nm[0],nm[1],nm[2],nm[3],PC[0],PC[1],PC[2],PC[3],PC[4],PC[5],PC[6],PC[7],PC[8],PC[9],ml,gl,sl2,mq,gq,sq2,dt,b)
+    IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33 = inverseQ(Q[0],Q[1],Q[2],Q[3],Q[4],Q[5],Q[6],Q[7],Q[8],Q[9])
+    # Find next cell initial conditions (9% asym div)
+    s, S = cell_division_likelihood_and_grad(m[0],m[1],m[2],m[3],IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33,sxd2,sgd2)
+    return z, err_z
+
 def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,val,rescale,sd2):
     """Return best_predictiona and error for every cell in form
     [laneID+id,[z,z_err]]"""
