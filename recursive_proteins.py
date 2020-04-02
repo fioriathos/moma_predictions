@@ -428,12 +428,13 @@ def cell_division_likelihood_and_grad(m0,m1,m2,m3,IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,
     IS22 =(4*(IQ22 - IQ02**2*sxd2 + IQ00*IQ22*sxd2))/(1 + IQ00*sxd2 - 4*IQ02**2*sgd2*sxd2 + 4*IQ22*(sgd2 + IQ00*sgd2*sxd2))
     IS23 = 0
     IS33 = (4*(IQ22 - IQ02**2*sxd2 + IQ00*IQ22*sxd2))/(1 + IQ00*sxd2 - 4*IQ02**2*sgd2*sxd2 + 4*IQ22*(sgd2 + IQ00*sgd2*sxd2))
-    S = inverseQ(IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33)
+    #S = inverseQ(IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33)
     s = (m0-np.log(2),m1,m2/2,m3)
-    return s,S
+    return s,(IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33)
 #------------------ OBJECTIVE OVER CELL CYCLE/ LANE AND TOTAL-----------------------------------
 def obj_and_grad_1cc(W,ml,gl,sl2,mq,gq,sq2,sx2,sg2,sxd2,sgd2,s0,s1,s2,s3,IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33,dt,b):
-    """To check"""
+    """ Compute the objective over 1 cell cycle"""
+    assert W.shape[1]==2
     # p(z_0|D_0)
     nm,PC = posteriori_matrices(W[0,0],W[0,1],s0,s1,s2,s3,IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33,sx2,sg2)
     ##### p(D_0)
@@ -450,57 +451,58 @@ def obj_and_grad_1cc(W,ml,gl,sl2,mq,gq,sq2,sx2,sg2,sxd2,sgd2,s0,s1,s2,s3,IS00,IS
     m,Q = new_mean_cov(nm[0],nm[1],nm[2],nm[3],PC[0],PC[1],PC[2],PC[3],PC[4],PC[5],PC[6],PC[7],PC[8],PC[9],ml,gl,sl2,mq,gq,sq2,dt,b)
     IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33 = inverseQ(Q[0],Q[1],Q[2],Q[3],Q[4],Q[5],Q[6],Q[7],Q[8],Q[9])
     # Find next cell initial conditions (9% asym div)
-    s, S = cell_division_likelihood_and_grad(m[0],m[1],m[2],m[3],IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33,sxd2,sgd2)
-    return -ll, s, S
+    s, IS = cell_division_likelihood_and_grad(m[0],m[1],m[2],m[3],IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33,sxd2,sgd2)
+    # keep the same structure as in recursive_length
+    return -ll, None, s, IS, None
 
-# 21 MARCH 2020
+def wrap_obj_and_grad_1cc(W,par_prot,par_len,s,IS,dt):
+    """wrapper of obj and grad 1cc"""
+    ml,gl,sl2,sx2,sxd2,= par_len
+    mq,gq,sq2,sg2,sgd2,b = par_prot
+    s0,s1,s2,s3 = s
+    IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33 = IS
+    return  obj_and_grad_1cc(W,ml,gl,sl2,mq,gq,sq2,sx2,sg2,sxd2,sgd2,s0,s1,s2,s3,IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33,dt,b)
 
-def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,\
-                   S,s,dt,grad_matS,rescale,sd2,nparr=False):
+def grad_obj_1lane(reind_,dat_,par_prot,par_len,IS,s,dt,nparr=False):
     """Compute the ll and gradient for 1 lane"""
     reind = deepcopy(reind_); dat = deepcopy(dat_)
-    obj = 0; gobj = 0           # total objective and gradient
+    obj = 0          # total objective and gradient
     for i in range(len(dat)):
         # Every time a cell do not have a "mother" (happen for first cells) intialize to initial conditions 
         if type(dat[i][0])!=tuple:
-            dat[i][0] = [s,S,grad_matS]
+            dat[i][0] = [s,IS]
         else:
-            s,S,grad_matS = dat[i][0] # Unpack initial conditions
+            s,S = dat[i][0] # Unpack initial conditions
         # Find ll over 1 cell cycle for 1 daughter
-        tmp =\
-        obj_and_grad_1cc(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,grad_matS=grad_matS,rescale=rescale,sd2=sd2) # calculate obj,gobj,p0 for one daugter
-        obj += tmp[0]; gobj += tmp[1] #update obj, gobj
+        tmp = wrap_obj_and_grad_1cc(dat[i][1][0],par_prot,par_len,s=s,IS=IS,dt=dt) # calculate obj,gobj,p0 for one daugter
+        obj += tmp[0];  #update obj, gobj
     # give the inital condition to the right cell lane
         if np.isnan(reind[i,0]) == False:
             dat[int(reind[i,0])][0] = tmp[2:] # s,S,grad_S
     #If the second cell exists do the same
         if np.sum(np.isnan(dat[i][1][1]))==0:
-            tmp =\
-            obj_and_grad_1cc(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,grad_matS=grad_matS,rescale=rescale,sd2=sd2)
-            obj += tmp[0]; gobj += tmp[1]
+            tmp = wrap_obj_and_grad_1cc(dat[i][1][1],par_prot,par_len,s=s,IS=IS,dt=dt) # calculate obj,gobj,p0 for one daugter
+            obj += tmp[0];
             if np.isnan(reind[i,1]) == False:
                 dat[int(reind[i,1])][0] = tmp[2:]
     #Return obj and gradobj
     if nparr:
-        return np.append(np.array([obj]),gobj)
+        return np.append(np.array([obj]),None)
     else:
-        return obj, gobj
-def grad_obj_total(mlam,gamma,sl2,sm2,reind_v,\
-                            dat_v,s,S,grad_matS,dt,rescale,sd2,nproc=10):
+        return obj, None
+def grad_obj_total(par_prot,par_len,reind_v,dat_v,s,IS,dt,nproc=10):
     """Apply in parallel on all lane ID"""
     p = Pool(nproc)
     fun = lambda x:\
-        grad_obj_1lane(x[0],x[1],mlam,gamma,sl2,sm2,S,s,dt,grad_matS,rescale,sd2,True)
+        grad_obj_1lane(x[0],x[1],par_prot,par_len,IS,s,dt,True)
     ret = p.map(fun,zip(reind_v,dat_v))
     ret = np.sum(np.vstack(ret),axis=0)
     return ret[0],ret[1:]
-    #-------------------PREDICTIONS OVER CC/LANE AND TOTAL-----------------------------------------
-def grad_obj_wrap(x,in_dic):
-    mlam,gamma,sl2,sm2 = x
-    reind_v,dat_v,grad_matS,s,S,dt,lane_ID_v,val_v,rescale,sd2 =\
-    in_dic['reind_v'],in_dic['dat_v'],in_dic['grad_matS'],in_dic['s'],in_dic['S'],in_dic['dt'],in_dic['lane_ID_v'],in_dic['val_v'],in_dic['rescale'],in_dic['sd2']
+def grad_obj_wrap(par_prot,par_len,in_dic):
+    reind_v,dat_v,s,IS,dt,lane_ID_v,val_v=\
+    in_dic['reind_v'],in_dic['dat_v'],in_dic['s'],in_dic['IS'],in_dic['dt'],in_dic['lane_ID_v'],in_dic['val_v']
     return grad_obj_total(mlam,gamma,sl2,sm2,reind_v,\
-                          dat_v,s,S,grad_matS,dt,rescale,sd2,nproc=10)
+                          dat_v,s,IS,dt,nproc=10)
 #-------------------PREDICTIONS-------------------------- 
 def predictions_1cc(W,ml,gl,sl2,mq,gq,sq2,sx2,sg2,sxd2,sgd2,s0,s1,s2,s3,IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33,dt,b):
     """Return optimal vector z and std over 1 cc"""
@@ -522,24 +524,30 @@ def predictions_1cc(W,ml,gl,sl2,mq,gq,sq2,sx2,sg2,sxd2,sgd2,s0,s1,s2,s3,IS00,IS0
     m,Q = new_mean_cov(nm[0],nm[1],nm[2],nm[3],PC[0],PC[1],PC[2],PC[3],PC[4],PC[5],PC[6],PC[7],PC[8],PC[9],ml,gl,sl2,mq,gq,sq2,dt,b)
     IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33 = inverseQ(Q[0],Q[1],Q[2],Q[3],Q[4],Q[5],Q[6],Q[7],Q[8],Q[9])
     # Find next cell initial conditions (9% asym div)
-    s, S = cell_division_likelihood_and_grad(m[0],m[1],m[2],m[3],IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33,sxd2,sgd2)
-    return z, err_z
-
-def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,val,rescale,sd2):
+    s, IS = cell_division_likelihood_and_grad(m[0],m[1],m[2],m[3],IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33,sxd2,sgd2)
+    return z, err_z,s,IS
+def wrap_prediction_1cc(W,par_prot,par_len,s,IS,dt):
+    """wrapper of obj and grad 1cc"""
+    ml,gl,sl2,sx2,sxd2,= par_len
+    mq,gq,sq2,sg2,sgd2,b = par_prot
+    s0,s1,s2,s3 = s
+    IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33 = IS
+    return  predictions_1cc(W,ml,gl,sl2,mq,gq,sq2,sx2,sg2,sxd2,sgd2,s0,s1,s2,s3,IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33,dt,b)
+def predictions_1lane(reind_,dat_,par_prot,par_len,IS,s,dt,lane_ID,val):
     """Return best_predictiona and error for every cell in form
     [laneID+id,[z,z_err]]"""
     from IPython.core.debugger import set_trace
     reind = deepcopy(reind_); dat = deepcopy(dat_)
     ret = [] # Return
+    count=0
     for i in range(len(dat)):
         # Every time a cell do not have a "mother" (happen for first cells) intialize to initial conditions
         if type(dat[i][0])!=tuple:
-            dat[i][0] = [s,S]
+            dat[i][0] = [s,IS]
         else:
-            s,S= dat[i][0] # Unpack initial conditions
+            s,IS= dat[i][0] # Unpack initial conditions
         # Find prediction over 1 cell cycle for 1 daughter
-        tmp =\
-        predictions_1cc(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,rescale=rescale,sd2=sd2)
+        tmp = wrap_prediction_1cc(dat[i][1][0],par_prot,par_len,dt=dt,s=s,IS=IS)
         z = tmp[0]; err_z = tmp[1]
         ret.append([lane_ID+'_'+str(val[i,1]),z,err_z])
         #print(np.mean(np.hstack(z).T[:,0]-dat[i][1][0]))
@@ -549,7 +557,7 @@ def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,val,rescale,
     #If the second cell exists do the same
         if np.sum(np.isnan(dat[i][1][1]))==0:
             tmp =\
-            predictions_1cc(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,rescale=rescale,sd2=sd2)
+            wrap_prediction_1cc(dat[i][1][1],par_prot,par_len,dt=dt,s=s,IS=IS)
             z = tmp[0]; err_z = tmp[1]
             ret.append([lane_ID+'_'+str(val[i,2]),z,err_z])
             #print(np.mean(np.hstack(z).T[:,0]-dat[i][1][1]))
@@ -558,57 +566,30 @@ def predictions_1lane(reind_,dat_,mlam,gamma,sl2,sm2,S,s,dt,lane_ID,val,rescale,
         #set_trace()
     #Return obj and gradobj
     return ret
-#def prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale,sd2,nproc=10):
-#    """Apply in parallel on all lane ID and return a np.array"""
-#    p = Pool(nproc)
-#    fun = lambda x:\
-#        predictions_1lane(x[0],x[1],mlam,gamma,sl2,sm2,S,s,dt,x[2],x[3],rescale,sd2)
-#    tmp = p.map(fun,zip(reind_v,dat_v,lane_ID_v,val_v))
-#    # Return a nice behave np array with cell_ID, z[0],z[1],err_z[0],err_z[1]
-#    foo = []
-#    for lan in tmp:
-#        for cid in lan:
-#            foo.append(np.hstack((np.hstack([cid[0]]*len(cid[1]))[:,None],np.hstack(cid[1]).T,np.vstack(cid[2]))))
-#    return np.vstack(foo)
-def prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale,sd2,nproc=10):
+
+def prediction_total(par_prot,par_len,reind_v,dat_v,s,IS,dt,lane_ID_v,val_v,nproc=10):
     """Apply in parallel on all lane ID and return a np.array"""
     tmp = []
     for k in range(len(reind_v)):
-        tmp.append(predictions_1lane(reind_=reind_v[k],dat_=dat_v[k],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,rescale=rescale,sd2=sd2,val=val_v[k],lane_ID=lane_ID_v[k]))
+        tmp.append(predictions_1lane(reind_v[k],dat_v[k],par_prot,par_len,IS,s,dt,lane_ID_v[k],val_v[k]))
     # Return a nice behave np array with cell_ID, z[0],z[1],err_z[0],err_z[1]
     foo = []
     for lan in tmp:
         for cid in lan:
-            foo.append(np.hstack((np.hstack([cid[0]]*len(cid[1]))[:,None],np.hstack(cid[1]).T,np.vstack(cid[2]))))
+            foo.append(np.hstack((np.hstack([cid[0]]*len(cid[1]))[:,None],np.vstack(cid[1]),np.vstack(cid[2]))))
     return np.vstack(foo)
 
-def cost_function(x,in_dic,r2=True):
-    """Return the r2 between predicted and observed data"""
-    mlam,gamma,sl2,sm2 = x
-    reind_v,dat_v,vec_dat_v,s,S,dt,lane_ID_v,val_v,rescale =\
-    in_dic['reind_v'],in_dic['dat_v'],in_dic['vec_dat_v'],in_dic['s'],in_dic['S'],in_dic['dt'],in_dic['lane_ID_v'],in_dic['val_v'],in_dic['rescale']
-    predicted =\
-    prediction_total(mlam,gamma,sl2,sm2,reind_v,dat_v,s,S,dt,lane_ID_v,val_v,rescale,sd2)[:,1:2]
-    # nan is used to keep same structure eventough we do not have gradient
-    if r2:
-        return\
-    1-np.sum((predicted.astype(np.float)-vec_dat_v)**2)/np.sum((vec_dat_v-np.mean(vec_dat_v))**2),\
-            np.array([np.nan,np.nan,np.nan,np.nan])
-    else:
-        return np.log(np.sum((predicted.astype(np.float)-vec_dat_v)**2)),\
-                np.array([np.nan,np.nan,np.nan,np.nan])
-def predict(min_dic, in_dic):
+def predict(par_prot,par_len, in_dic):
     """It is just a  = xwrapper to keep nice data structure where min_dic is the dict
     returned by minimize and in dic the one returned by build_data_strucure"""
-    md = min_dic['best_param']
-    return prediction_total(md['mlam'],md['gamma'],md['sl2'],md['sm2'],\
+    return prediction_total(par_prot, par_len,\
                             in_dic['reind_v'],in_dic['dat_v'],in_dic['s'],\
-                           in_dic['S'],in_dic['dt'],in_dic['lane_ID_v'],\
-                            in_dic['val_v'],in_dic['rescale'],in_dic['sd2'])
+                           in_dic['IS'],in_dic['dt'],in_dic['lane_ID_v'],\
+                            in_dic['val_v'])
 ################################################################################################
 ############################## DATA TREATEMENT #################################################
 ################################################################################################
-def build_intial_mat(df,leng):
+def build_intial_mat(df,leng,prot,b):
     """ Build the intiala matrix s,S and intial gradient grad_S """
     # Computation done in minutes (that's why *60)
     def sleres(t,y):
@@ -617,24 +598,28 @@ def build_intial_mat(df,leng):
         r = linregress(t,y)
         assert len(t)>2, "not enough points"
         return r.slope,r.intercept, y-(r.intercept+t*r.slope)
-    G = df.groupby('cell').apply(lambda x: sleres(x.time_sec/60.,x['{}'.format(leng)]))
-    G = np.vstack(G)
-    lam = G[:,0]; x0 = G[:,1]; res = G[:,2]
+    X = df.groupby('cell').apply(lambda x: sleres(x.time_sec/60.,x['{}'.format(leng)]))
+    G = df.groupby('cell').apply(lambda x:\
+                                 sleres(x.time_sec[:4]/60.,x['{}'.format(prot)][:4]))
+    X = np.vstack(X); G = np.vstack(G)
+    lam = X[:,0]; x0 = X[:,1]; res = X[:,2]
+    q= G[:,0]; g0 = G[:,1]; res_g = G[:,2]
     res = np.array([k for h in res for k in h])
-    sm2 = np.var(res)
+    res_g = np.array([k for h in res_g for k in h])
+    sx2 = np.var(res)
+    sg2 = np.var(res_g)
+    q = (q+b*g0)/(np.exp(x0.astype(float)))
     ####### They do not depend on the parameters
-    mat = np.zeros((2,2)); vec = np.zeros((2,1))
-    grad_matS = {'m_mlam':vec,'m_gamma':vec,'m_sl2':vec,'m_sm2':vec,\
-                 'Q_mlam':mat,'Q_gamma':mat,'Q_sl2':mat,'Q_sm2':mat}
-    s = np.array([[np.mean(x0)],[np.mean(lam)]])
-    S = np.array([[np.var(x0),0],[0,np.var(lam)]])
-    return s, S, grad_matS,sm2
-#
-def build_mat(mother,daugther,dfl,leng):
+    mat = np.zeros((4,4)); vec = np.zeros((4,1))
+    s = (np.mean(x0),np.mean(lam),np.mean(g0),np.mean(q))
+    IS = (1./np.var(x0),0,0,0,1/np.var(lam),0,0,1/np.var(g0),0,1/np.var(q))
+    return s, IS, sx2, sg2
+def build_mat(mother,daugther,dfl,leng,prot):
     """Find the correct structure. It will return [mum_ind,daughter1_ind,daughter2_ind] and [mum_ind,[Len(dau1),Len(daug2)]]"""
     tmp = []; tmp1=[]
     for i,j in zip(mother,daugther):
-        which = lambda x: dfl.loc[dfl['id']==j[x]]['{}'.format(leng)].values[None,:]
+        which = lambda x:\
+            dfl.loc[dfl['id']==j[x]][['{}'.format(leng),'{}'.format(prot)]].values
         if j.shape[0]==1:
             tmp.append([i,j[0],np.nan])
             tmp1.append([i,[which(0),np.nan]])
@@ -642,7 +627,6 @@ def build_mat(mother,daugther,dfl,leng):
             tmp1.append([i,[which(0),which(1)]])
             tmp.append([i,j[0],j[1]])
     return np.vstack(tmp),tmp1
-#
 def who_goes_where(val):
     """ Connects the geanology e.g. if val [[19,[20,21]],[20,[22,nan]],[21,[23,nan]] ] it will return [[1,2],..] saying that division of cell 20 (daughter of 19) is at index 1 """
     tmp1 = [np.where(val[:,:1]==k)[0] for k in val [:,1:2]]
@@ -652,7 +636,7 @@ def who_goes_where(val):
     tmp2 = np.vstack(list(map(fun,tmp2)))
     return np.hstack([tmp1,tmp2])
 #
-def asym_dist_1lane(reind_,dat_,dt,rescale):
+def asym_dist_1lane(reind_,dat_,dt):
     """Find the asymmetric distribution in log space for one lane"""
     from copy import deepcopy
     reind = deepcopy(reind_); dat = deepcopy(dat_)
@@ -680,34 +664,34 @@ def asym_dist_1lane(reind_,dat_,dt,rescale):
         # If it does has a mother predict its length and save the log  difference betwee half of mother cell and daugther one
         else:
             x0,lam = pred_moth(i,0)
-            distx0.append(dat[i][0]['ml']-rescale*np.log(2)-x0)
+            distx0.append(dat[i][0]['ml']-np.log(2)-x0)
             distlam.append(dat[i][0]['mlam']-lam)
             distk0.append([x0,lam])
             if np.sum(np.isnan(dat[i][1][1]))==0:
                 x0,lam = pred_moth(i,1)
-                distx0.append(dat[i][0]['ml']-rescale*np.log(2)-x0)
+                distx0.append(dat[i][0]['ml']-np.log(2)-x0)
                 distlam.append(dat[i][0]['mlam']-lam)
                 distk0.append([x0,lam])
     return distx0, distlam, distk0
-def asym_dist(reind_v,dat_v,dt,rescale):
+def asym_dist(reind_v,dat_v,dt):
     """Return distribution of difference between predictd half size and actual cell division (distx0); differene in growth rates between mother and daugheter (distlam); and initial condition (x,lam) distk0 """
-    distx0 = []; distlam = []; distk0 =[] 
+    distx0 = []; distlam = []; distk0 =[]
     for i,j in enumerate(dat_v):
-        dx0 , dlam, dk0 = asym_dist_1lane(reind_v[i],dat_v[i],dt,rescale)
+        dx0 , dlam, dk0 = asym_dist_1lane(reind_v[i],dat_v[i],dt)
         distx0.append(dx0); distlam.append(dlam); distk0.append(dk0)
-    flat = lambda dist: np.array([j for k in dist for j in k]) 
+    flat = lambda dist: np.array([j for k in dist for j in k])
     return flat(distx0),flat(distlam), flat(distk0)
 #
-def build_data_strucutre(df,leng,rescale,info=False):
+def build_data_strucutre(df,leng,prot,b):
     """Return for every lane the data with respective daughteres and initial conditions"""
     #Sometimes cells with 1 data point are present and we don't want them
     df = df.groupby('cell').filter(lambda x: x.values.shape[0]>1) #
     dt = np.diff(np.sort(df['time_sec'].unique()))[1]/60
     assert dt%3==0 and dt != 0., "look if dt make sense"
     #rescae
-    df['log_resc_'+leng] = np.log(df['{}'.format(leng)])*rescale
+    df['log_resc_'+leng] = np.log(df['{}'.format(leng)])
     #print("The variable to use is: log_resc_{}".format(leng))
-    s,S,grad_matS,sm = build_intial_mat(df,leng='log_resc_'+leng)
+    s,IS,sx2,sg2= build_intial_mat(df,'log_resc_'+leng,prot,b)
 	#n_point = df.shape[0]
     n_point = df.shape[0]
     dat_v = []; reind_v = [];
@@ -717,7 +701,7 @@ def build_data_strucutre(df,leng,rescale,info=False):
         daugther = [dfl.loc[dfl['parent_id']==k].id.unique() for k in dfl.parent_id.unique()] # find its daughters
         mothers = dfl.parent_id.unique() # respective mothers
         # Correct data strucutre
-        val, dat = build_mat(mothers,daugther,dfl,'log_resc_'+leng)
+        val, dat = build_mat(mothers,daugther,dfl,'log_resc_'+leng,prot)
         reind = who_goes_where(val)
         dat_v.append(dat); reind_v.append(reind)
         val_v.append(val); lane_ID_v.append(lid)
@@ -729,25 +713,23 @@ def build_data_strucutre(df,leng,rescale,info=False):
                     continue
                 else:
                     vec_dat_v.append(j[1][1])
-    vec_dat_v = np.hstack(vec_dat_v).T
-    if info:
-        print("To estimate sd2 call asym_dist! Otherwise is set to cv 0.1")
-    sd2, _, _ = asym_dist(reind_v,dat_v,dt=dt,rescale=rescale)
+    vec_dat_v = np.vstack(vec_dat_v)
+    sdx2, _, _ = asym_dist(reind_v,dat_v,dt=dt)
     #asym division equal to 0.1 cv(0.1*rescale*np.log(2))**2
-    return df,{'n_point':n_point,'dt':dt,'s':s,'S':S,'grad_matS':grad_matS,\
+    return df,{'n_point':n_point,'dt':dt,'s':s,'IS':IS,\
             'reind_v':reind_v,'dat_v':dat_v, 'val_v':val_v,\
-               'lane_ID_v':lane_ID_v,'rescale':rescale,'sm2':sm,\
-               'vec_dat_v':vec_dat_v,'sd2':np.var(sd2)}
+               'lane_ID_v':lane_ID_v,'sx2':sx2,\
+               'vec_dat_v':vec_dat_v,'sdx2':np.var(sdx2),'sg2':sg2}
 #
 def merge_df_pred(df,pred_mat):
     """Merge the output from predict with the initial dataframe"""
     # From mat to dataframe
     dft = pd.DataFrame(pred_mat,columns=\
-                       ('cell_','pred_log_length','pred_growth_rate',\
-                        'err_log_length','err_growth_rate'))
+                       ('cell_','pred_log_length','pred_growth_rate','pred_proteins','pred_q',\
+                        'err_log_length','err_growth_rate','err_prot','err_q'))
     # Give numerical values
-    dft[['pred_log_length','pred_growth_rate','err_log_length','err_growth_rate']] = \
-            dft[['pred_log_length','pred_growth_rate','err_log_length','err_growth_rate']].apply(pd.to_numeric)
+    dft[['pred_log_length','pred_growth_rate','pred_proteins','pred_q','err_log_length','err_growth_rate','err_prot','err_q']] = \
+    dft[['pred_log_length','pred_growth_rate','pred_proteins','pred_q','err_log_length','err_growth_rate','err_prot','err_q']].apply(pd.to_numeric)
     #Create subindex for merging
     dft['sub_ind'] = dft.groupby('cell_')['pred_log_length'].transform(lambda x:\
                                                                np.arange(len(x)))

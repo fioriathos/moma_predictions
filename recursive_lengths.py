@@ -527,7 +527,7 @@ def merge_df_pred(df,pred_mat):
     dff = \
     pd.concat([df.set_index(['cell_','sub_ind']),dft.set_index(['cell_','sub_ind'])],axis=1)
     dff = dff.reset_index()
-    return dff.drop(['cell_','sub_ind'],axis=1)
+    return dff.drop(['cell_','sub_ind'],axis=1),dft
 def find_best_lengths(files,pwd='/scicore/home/nimwegen/fiori/MoMA_predictions/predictions/',lengths=['length_um','length_erik','length_moma','length_raw','length_pixel']):
     """Find best length measurment """
     tmp=[]
@@ -641,7 +641,8 @@ def smilar_frame(W,cvd=0):
     df = pd.concat(df,ignore_index=True)
     df['cell'] = df['lane_ID']+'_'+df['id']
     return df
-def syntetic_corr_gen(mlam,gamma,sl2,sm2,dt,cpl=40, lenc = 25, ncel = 20):
+def syntetic_corr_gen(mlam,gamma,sl2,sm2,dt,cpl=40, lenc = 25, ncel = 20,ngen=1):
+    """Syntetic correlations"""
     def sleres(y,dt=dt):
         """Return slope (lambda), intercept (x0) and residuals (form sm2)"""
         t = np.arange(0,dt*len(y),dt) 
@@ -652,13 +653,39 @@ def syntetic_corr_gen(mlam,gamma,sl2,sm2,dt,cpl=40, lenc = 25, ncel = 20):
     dfsy['leng'] = dfsy['leng'].apply(lambda x: np.exp(np.random.normal(np.log(x),np.sqrt(sm2))))
     dfsy,in_dic_sy = build_data_strucutre(dfsy,'leng',1)
     dfsy['parent_cell'] = dfsy['lane_ID']+'_'+dfsy['parent_id']
-    dfsy = genalogy(dfsy,'parent_cell')
-    dfsy = genalogy(dfsy,'g_parent_cell')
-    dfsy = genalogy(dfsy,'g_g_parent_cell')
-    dfsy = genalogy(dfsy,'g_g_g_parent_cell')
+    if ngen>1:
+        dfsy = genalogy(dfsy,'parent_cell')
+        dfsy = genalogy(dfsy,'g_parent_cell')
+        dfsy = genalogy(dfsy,'g_g_parent_cell')
+        dfsy = genalogy(dfsy,'g_g_g_parent_cell')
     elratsy = dfsy.groupby('cell').apply(lambda x: sleres(x.log_resc_leng))
-    corr_long = np.vstack([corr_par(dfsy,elratsy,par_deg=k) for k in ['parent_cell','g_parent_cell','g_g_parent_cell','g_g_g_parent_cell','g_g_g_g_parent_cell'] ])
-    return corr_long
+    if ngen>1:
+        corr_long = np.vstack([corr_par(dfsy,elratsy,par_deg=k) for k in ['parent_cell','g_parent_cell','g_g_parent_cell','g_g_g_parent_cell','g_g_g_g_parent_cell'] ])
+    else:
+        corr_long = np.vstack([corr_par(dfsy,elratsy,par_deg=k) for k in ['parent_cell'] ])
+    return np.std(elratsy)/np.mean(elratsy),corr_long
+def the_cv_1gen(mlam,gamma,sl2,tdiv):
+    """Theoretical CV and 1 gen corr time """
+    def c(t,s):
+        """s=t+s"""
+        return sl2/(2*gamma**3)*(2*t*gamma-(1+np.exp(-gamma*s))*(1-np.exp(-gamma*t)))
+    cv = np.sqrt(c(tdiv,0))/(mlam*tdiv)
+    cor = c(tdiv,tdiv)/np.sqrt(c(tdiv,0)*c(2*tdiv,0))
+    return cv, cor
+def give_unique_dataset(df,step):
+    """Denoise the dataset and rebuild step independent out of it! We changecell name bychanging the date """
+    if type(df['date'].iloc[0])!=str:
+        df['date']=df['date'].apply(lambda x:str(x))
+    d3glu = denoised_dataset(df,step)
+    tmp = []
+    k=0
+    for dtm in d3glu:
+        dtm['date']=dtm['date']+'_{}_'.format(k)
+        dtm['cell'] = dtm['date']+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))+dtm['id'].apply(lambda x: str(x))
+        dtm['lane_ID'] = dtm['date']+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))
+        tmp.append(dtm)
+        k+=1
+    return pd.concat(tmp,ignore_index=True)
 ################################################################################################
 ############################### The stocastics models  #########################################
 ################################################################################################
