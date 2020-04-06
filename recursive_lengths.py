@@ -420,52 +420,70 @@ def who_goes_where(val):
     tmp2 = np.vstack(list(map(fun,tmp2)))
     return np.hstack([tmp1,tmp2])
 #
-def asym_dist_1lane(reind_,dat_,dt,rescale):
-    """Find the asymmetric distribution in log space for one lane"""
-    from copy import deepcopy
-    reind = deepcopy(reind_); dat = deepcopy(dat_)
-    distx0 = []; distlam = []; distk0 = []           # total objective and gradient
-    def pred_moth(i,j):
-        """Predict division length and growth rate. Do same for inital one"""
-        # Linear fit one cell cycle to estimate length mother and lenght daughter
-        W=dat[i][1][j].reshape(-1)
-        t = np.arange(0,dt*len(W),dt)
-        tmp = linregress(t,W)
-        tmp1 = linregress(t[:4],W[:4])
-        tmp2 = linregress(t[:4],W[-4:])
-        if np.isnan(reind[i,j]) == False:
-            # predict cell lenght at division and el_rat
-            foo = np.append(t,t[-1]+dt/2)*tmp.slope+tmp.intercept
-            dat[int(reind[i,j])][0] = {'ml':foo[-1],'mlam':tmp2.slope}
-        return tmp.intercept, tmp1.slope #x0 and lambda
-    ## APPLY
-    for i in range(len(dat)):
-        # If cell doesn't have mother just predict length of daugther and save them
-        if type(dat[i][0])!=dict:
-            pred_moth(i,0);
-            if np.sum(np.isnan(dat[i][1][1]))==0:
-                pred_moth(i,1)
-        # If it does has a mother predict its length and save the log  difference betwee half of mother cell and daugther one
-        else:
-            x0,lam = pred_moth(i,0)
-            distx0.append(dat[i][0]['ml']-rescale*np.log(2)-x0)
-            distlam.append(dat[i][0]['mlam']-lam)
-            distk0.append([x0,lam])
-            if np.sum(np.isnan(dat[i][1][1]))==0:
-                x0,lam = pred_moth(i,1)
-                distx0.append(dat[i][0]['ml']-rescale*np.log(2)-x0)
-                distlam.append(dat[i][0]['mlam']-lam)
-                distk0.append([x0,lam])
-    return distx0, distlam, distk0
-def asym_dist(reind_v,dat_v,dt,rescale):
-    """Return distribution of difference between predictd half size and actual cell division (distx0); differene in growth rates between mother and daugheter (distlam); and initial condition (x,lam) distk0 """
-    distx0 = []; distlam = []; distk0 =[] 
-    for i,j in enumerate(dat_v):
-        dx0 , dlam, dk0 = asym_dist_1lane(reind_v[i],dat_v[i],dt,rescale)
-        distx0.append(dx0); distlam.append(dlam); distk0.append(dk0)
-    flat = lambda dist: np.array([j for k in dist for j in k]) 
-    return flat(distx0),flat(distlam), flat(distk0)
+#def asym_dist_1lane(reind_,dat_,dt,rescale):
+#    """Find the asymmetric distribution in log space for one lane"""
+#    from copy import deepcopy
+#    reind = deepcopy(reind_); dat = deepcopy(dat_)
+#    distx0 = []; distlam = []; distk0 = []           # total objective and gradient
+#    def pred_moth(i,j):
+#        """Predict division length and growth rate. Do same for inital one"""
+#        # Linear fit one cell cycle to estimate length mother and lenght daughter
+#        W=dat[i][1][j].reshape(-1)
+#        t = np.arange(0,dt*len(W),dt)
+#        tmp = linregress(t,W)
+#        tmp1 = linregress(t[:4],W[:4])
+#        tmp2 = linregress(t[:4],W[-4:])
+#        if np.isnan(reind[i,j]) == False:
+#            # predict cell lenght at division and el_rat
+#            foo = np.append(t,t[-1]+dt/2)*tmp.slope+tmp.intercept
+#            dat[int(reind[i,j])][0] = {'ml':foo[-1],'mlam':tmp2.slope}
+#        return tmp.intercept, tmp1.slope #x0 and lambda
+#    ## APPLY
+#    for i in range(len(dat)):
+#        # If cell doesn't have mother just predict length of daugther and save them
+#        if type(dat[i][0])!=dict:
+#            pred_moth(i,0);
+#            if np.sum(np.isnan(dat[i][1][1]))==0:
+#                pred_moth(i,1)
+#        # If it does has a mother predict its length and save the log  difference betwee half of mother cell and daugther one
+#        else:
+#            x0,lam = pred_moth(i,0)
+#            distx0.append(dat[i][0]['ml']-rescale*np.log(2)-x0)
+#            distlam.append(dat[i][0]['mlam']-lam)
+#            distk0.append([x0,lam])
+#            if np.sum(np.isnan(dat[i][1][1]))==0:
+#                x0,lam = pred_moth(i,1)
+#                distx0.append(dat[i][0]['ml']-rescale*np.log(2)-x0)
+#                distlam.append(dat[i][0]['mlam']-lam)
+#                distk0.append([x0,lam])
+#    return distx0, distlam, distk0
+#def asym_dist(reind_v,dat_v,dt,rescale):
+#    """Return distribution of difference between predictd half size and actual cell division (distx0); differene in growth rates between mother and daugheter (distlam); and initial condition (x,lam) distk0 """
+#    distx0 = []; distlam = []; distk0 =[] 
+#    for i,j in enumerate(dat_v):
+#        dx0 , dlam, dk0 = asym_dist_1lane(reind_v[i],dat_v[i],dt,rescale)
+#        distx0.append(dx0); distlam.append(dlam); distk0.append(dk0)
+#    flat = lambda dist: np.array([j for k in dist for j in k]) 
+#    return flat(distx0),flat(distlam), flat(distk0)
 #
+def asym_div(dat_v,rescale):
+    """Predict the amount of asymmetric division by considering the 2 daughter must sum up to the total"""
+    from scipy.stats import linregress
+    lg = lambda x: linregress(range(len(x.reshape(-1))),x.reshape(-1)).intercept
+    flat = lambda x: np.array([g for m in x for g in m ])
+    sxd2 =[]; sgd2 = []
+    for j in dat_v:
+        for k in j:
+            if type(k[1][1])==float and (np.isnan(k[1][1])): 
+                continue
+            else:
+                # Predict the length and gfp at begin
+                x1 = k[1][0]
+                x2 = k[1][1]
+                x1,x2 = [lg(x) for x in [x1,x2]]
+                perfx = (x1+x2)-rescale*np.log(2) # perfect division
+                sxd2.append((perfx-x1,perfx-x2))
+    return np.var(flat(sxd2))
 def build_data_strucutre(df,leng,rescale,info=False):
     """Return for every lane the data with respective daughteres and initial conditions"""
     #Sometimes cells with 1 data point are present and we don't want them
@@ -500,12 +518,13 @@ def build_data_strucutre(df,leng,rescale,info=False):
     vec_dat_v = np.hstack(vec_dat_v).T
     if info:
         print("To estimate sd2 call asym_dist! Otherwise is set to cv 0.1")
-    sd2, _, _ = asym_dist(reind_v,dat_v,dt=dt,rescale=rescale)
+    #sd2, _, _ = asym_dist(reind_v,dat_v,dt=dt,rescale=rescale)
+    sd2 = asym_div(dat_v,rescale)
     #asym division equal to 0.1 cv(0.1*rescale*np.log(2))**2
     return df,{'n_point':n_point,'dt':dt,'s':s,'S':S,'grad_matS':grad_matS,\
             'reind_v':reind_v,'dat_v':dat_v, 'val_v':val_v,\
                'lane_ID_v':lane_ID_v,'rescale':rescale,'sm2':sm,\
-               'vec_dat_v':vec_dat_v,'sd2':np.var(sd2)}
+               'vec_dat_v':vec_dat_v,'sd2':sd2}
 #
 def merge_df_pred(df,pred_mat):
     """Merge the output from predict with the initial dataframe"""
@@ -672,14 +691,13 @@ def the_cv_1gen(mlam,gamma,sl2,tdiv):
     cv = np.sqrt(c(tdiv,0))/(mlam*tdiv)
     cor = c(tdiv,tdiv)/np.sqrt(c(tdiv,0)*c(2*tdiv,0))
     return cv, cor
-def give_unique_dataset(df,step):
-    """Denoise the dataset and rebuild step independent out of it! We changecell name bychanging the date """
-    if type(df['date'].iloc[0])!=str:
-        df['date']=df['date'].apply(lambda x:str(x))
-    d3glu = denoised_dataset(df,step)
+def give_unique_dataset(df,step,nump=3):
+    """Denoise the dataset and rebuild step independent out of it! """
+    d3glu = denoised_dataset(df,step,nump)
     tmp = []
     k=0
     for dtm in d3glu:
+        dtm = dtm.drop(['cell','Unnamed: 0','lane_ID'],axis=1)
         dtm['date']=dtm['date']+'_{}_'.format(k)
         dtm['cell'] = dtm['date']+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))+dtm['id'].apply(lambda x: str(x))
         dtm['lane_ID'] = dtm['date']+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))
