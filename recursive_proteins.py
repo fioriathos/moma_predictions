@@ -453,16 +453,14 @@ def obj_and_grad_1cc(W,ml,gl,sl2,mq,gq,sq2,sx2,sg2,sxd2,sgd2,s0,s1,s2,s3,IS00,IS
     # Find next cell initial conditions (9% asym div)
     s, IS = cell_division_likelihood_and_grad(m[0],m[1],m[2],m[3],IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33,sxd2,sgd2)
     # keep the same structure as in recursive_length
-    return -ll, None, s, IS, None
-
+    return -ll, None, s, IS
 def wrap_obj_and_grad_1cc(W,par_prot,par_len,s,IS,dt):
     """wrapper of obj and grad 1cc"""
-    ml,gl,sl2,sx2,sxd2,= par_len
+    ml,gl,sl2,sx2,sxd2= par_len
     mq,gq,sq2,sg2,sgd2,b = par_prot
     s0,s1,s2,s3 = s
     IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33 = IS
     return  obj_and_grad_1cc(W,ml,gl,sl2,mq,gq,sq2,sx2,sg2,sxd2,sgd2,s0,s1,s2,s3,IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33,dt,b)
-
 def grad_obj_1lane(reind_,dat_,par_prot,par_len,IS,s,dt,nparr=False):
     """Compute the ll and gradient for 1 lane"""
     reind = deepcopy(reind_); dat = deepcopy(dat_)
@@ -501,11 +499,12 @@ def grad_obj_total(par_prot,par_len,reind_v,dat_v,s,IS,dt,nproc=10):
 def grad_obj_wrap(par_prot,par_len,in_dic):
     reind_v,dat_v,s,IS,dt,lane_ID_v,val_v=\
     in_dic['reind_v'],in_dic['dat_v'],in_dic['s'],in_dic['IS'],in_dic['dt'],in_dic['lane_ID_v'],in_dic['val_v']
-    return grad_obj_total(mlam,gamma,sl2,sm2,reind_v,\
+    return grad_obj_total(par_prot,par_len,reind_v,\
                           dat_v,s,IS,dt,nproc=10)
 #-------------------PREDICTIONS-------------------------- 
 def predictions_1cc(W,ml,gl,sl2,mq,gq,sq2,sx2,sg2,sxd2,sgd2,s0,s1,s2,s3,IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33,dt,b):
     """Return optimal vector z and std over 1 cc"""
+    from IPython.core.debugger import set_trace
     assert W.shape[1]==2
     z = []; err_z=[]
     # p(z_0|D_0)
@@ -513,10 +512,12 @@ def predictions_1cc(W,ml,gl,sl2,mq,gq,sq2,sx2,sg2,sxd2,sgd2,s0,s1,s2,s3,IS00,IS0
     z.append(nm); err_z.append(np.sqrt(np.array([PC[0],PC[4],PC[7],PC[9]])))
     ##### p(D_0)
     for j in range(1,W.shape[0]):
+        #set_trace()
         ###### P(z_{t+dt}|D_t)
         m,Q = new_mean_cov(nm[0],nm[1],nm[2],nm[3],PC[0],PC[1],PC[2],PC[3],PC[4],PC[5],PC[6],PC[7],PC[8],PC[9],ml,gl,sl2,mq,gq,sq2,dt,b)
         ##### P(z_{t+dt}|D_{t+dt}) = N(b',B')
         IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33 = inverseQ(Q[0],Q[1],Q[2],Q[3],Q[4],Q[5],Q[6],Q[7],Q[8],Q[9])
+        #print(IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33 )
         nm,PC = posteriori_matrices(W[j,0],W[j,1],m[0],m[1],m[2],m[3],IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33 ,sx2,sg2)
         z.append(nm); err_z.append(np.sqrt(np.array([PC[0],PC[4],PC[7],PC[9]])))
         ##### Likelihood
@@ -536,7 +537,6 @@ def wrap_prediction_1cc(W,par_prot,par_len,s,IS,dt):
 def predictions_1lane(reind_,dat_,par_prot,par_len,IS,s,dt,lane_ID,val):
     """Return best_predictiona and error for every cell in form
     [laneID+id,[z,z_err]]"""
-    from IPython.core.debugger import set_trace
     reind = deepcopy(reind_); dat = deepcopy(dat_)
     ret = [] # Return
     count=0
@@ -636,51 +636,74 @@ def who_goes_where(val):
     tmp2 = np.vstack(list(map(fun,tmp2)))
     return np.hstack([tmp1,tmp2])
 #
-def asym_dist_1lane(reind_,dat_,dt):
-    """Find the asymmetric distribution in log space for one lane"""
-    from copy import deepcopy
-    reind = deepcopy(reind_); dat = deepcopy(dat_)
-    distx0 = []; distlam = []; distk0 = []           # total objective and gradient
-    def pred_moth(i,j):
-        """Predict division length and growth rate. Do same for inital one"""
-        # Linear fit one cell cycle to estimate length mother and lenght daughter
-        W=dat[i][1][j].reshape(-1)
-        t = np.arange(0,dt*len(W),dt)
-        tmp = linregress(t,W)
-        tmp1 = linregress(t[:4],W[:4])
-        tmp2 = linregress(t[:4],W[-4:])
-        if np.isnan(reind[i,j]) == False:
-            # predict cell lenght at division and el_rat
-            foo = np.append(t,t[-1]+dt/2)*tmp.slope+tmp.intercept
-            dat[int(reind[i,j])][0] = {'ml':foo[-1],'mlam':tmp2.slope}
-        return tmp.intercept, tmp1.slope #x0 and lambda
-    ## APPLY
-    for i in range(len(dat)):
-        # If cell doesn't have mother just predict length of daugther and save them
-        if type(dat[i][0])!=dict:
-            pred_moth(i,0);
-            if np.sum(np.isnan(dat[i][1][1]))==0:
-                pred_moth(i,1)
-        # If it does has a mother predict its length and save the log  difference betwee half of mother cell and daugther one
-        else:
-            x0,lam = pred_moth(i,0)
-            distx0.append(dat[i][0]['ml']-np.log(2)-x0)
-            distlam.append(dat[i][0]['mlam']-lam)
-            distk0.append([x0,lam])
-            if np.sum(np.isnan(dat[i][1][1]))==0:
-                x0,lam = pred_moth(i,1)
-                distx0.append(dat[i][0]['ml']-np.log(2)-x0)
-                distlam.append(dat[i][0]['mlam']-lam)
-                distk0.append([x0,lam])
-    return distx0, distlam, distk0
-def asym_dist(reind_v,dat_v,dt):
-    """Return distribution of difference between predictd half size and actual cell division (distx0); differene in growth rates between mother and daugheter (distlam); and initial condition (x,lam) distk0 """
-    distx0 = []; distlam = []; distk0 =[]
-    for i,j in enumerate(dat_v):
-        dx0 , dlam, dk0 = asym_dist_1lane(reind_v[i],dat_v[i],dt)
-        distx0.append(dx0); distlam.append(dlam); distk0.append(dk0)
-    flat = lambda dist: np.array([j for k in dist for j in k])
-    return flat(distx0),flat(distlam), flat(distk0)
+#def asym_dist_1lane(reind_,dat_,dt):
+#    """Find the asymmetric distribution in log space for one lane"""
+#    from copy import deepcopy
+#    reind = deepcopy(reind_); dat = deepcopy(dat_)
+#    distx0 = []; distlam = []; distk0 = []           # total objective and gradient
+#    def pred_moth(i,j):
+#        """Predict division length and growth rate. Do same for inital one"""
+#        # Linear fit one cell cycle to estimate length mother and lenght daughter
+#        W=dat[i][1][j].reshape(-1)
+#        t = np.arange(0,dt*len(W),dt)
+#        tmp = linregress(t,W)
+#        tmp1 = linregress(t[:4],W[:4])
+#        tmp2 = linregress(t[:4],W[-4:])
+#        if np.isnan(reind[i,j]) == False:
+#            # predict cell lenght at division and el_rat
+#            foo = np.append(t,t[-1]+dt/2)*tmp.slope+tmp.intercept
+#            dat[int(reind[i,j])][0] = {'ml':foo[-1],'mlam':tmp2.slope}
+#        return tmp.intercept, tmp1.slope #x0 and lambda
+#    ## APPLY
+#    for i in range(len(dat)):
+#        # If cell doesn't have mother just predict length of daugther and save them
+#        if type(dat[i][0])!=dict:
+#            pred_moth(i,0);
+#            if np.sum(np.isnan(dat[i][1][1]))==0:
+#                pred_moth(i,1)
+#        # If it does has a mother predict its length and save the log  difference betwee half of mother cell and daugther one
+#        else:
+#            x0,lam = pred_moth(i,0)
+#            distx0.append(dat[i][0]['ml']-np.log(2)-x0)
+#            distlam.append(dat[i][0]['mlam']-lam)
+#            distk0.append([x0,lam])
+#            if np.sum(np.isnan(dat[i][1][1]))==0:
+#                x0,lam = pred_moth(i,1)
+#                distx0.append(dat[i][0]['ml']-np.log(2)-x0)
+#                distlam.append(dat[i][0]['mlam']-lam)
+#                distk0.append([x0,lam])
+#    return distx0, distlam, distk0
+#def asym_dist(reind_v,dat_v,dt):
+#    """Return distribution of difference between predictd half size and actual cell division (distx0); differene in growth rates between mother and daugheter (distlam); and initial condition (x,lam) distk0 """
+#    distx0 = []; distlam = []; distk0 =[]
+#    for i,j in enumerate(dat_v):
+#        dx0 , dlam, dk0 = asym_dist_1lane(reind_v[i],dat_v[i],dt)
+#        distx0.append(dx0); distlam.append(dlam); distk0.append(dk0)
+#    flat = lambda dist: np.array([j for k in dist for j in k])
+#    return flat(distx0),flat(distlam), flat(distk0)
+def asym_div(dat_v,rescale=1):
+    """Predict the amount of asymmetric division by considering the 2 daughter must sum up to the total"""
+    from scipy.stats import linregress
+    lg = lambda x: linregress(range(len(x)),x.reshape(-1)).intercept
+    flat = lambda x: np.array([g for m in x for g in m ])
+    sxd2 =[]; sgd2 = []
+    for j in dat_v:
+        for k in j:
+            if type(k[1][1])==float and (np.isnan(k[1][1])): 
+                continue
+            else:
+                # Predict the length and gfp at begin
+
+                x1 = k[1][0][:,0]
+                g1 = k[1][0][:4,1]
+                x2 = k[1][1][:,0]
+                g2 = k[1][1][:4,1]
+                x1,x2,g1,g2 = [lg(x) for x in [x1,x2,g1,g2]]
+                perfx = (x1+x2)-rescale*np.log(2) # perfect division
+                perfg = (g1+g2)/2 # perfect division
+                sxd2.append((perfx-x1,perfx-x2))
+                sgd2.append((perfg-g1,perfg-g2))
+    return np.var(flat(sxd2)),np.var(flat(sgd2))
 #
 def build_data_strucutre(df,leng,prot,b):
     """Return for every lane the data with respective daughteres and initial conditions"""
@@ -714,12 +737,12 @@ def build_data_strucutre(df,leng,prot,b):
                 else:
                     vec_dat_v.append(j[1][1])
     vec_dat_v = np.vstack(vec_dat_v)
-    sdx2, _, _ = asym_dist(reind_v,dat_v,dt=dt)
+    sdx2, sdg2  = asym_div(dat_v)
     #asym division equal to 0.1 cv(0.1*rescale*np.log(2))**2
     return df,{'n_point':n_point,'dt':dt,'s':s,'IS':IS,\
             'reind_v':reind_v,'dat_v':dat_v, 'val_v':val_v,\
                'lane_ID_v':lane_ID_v,'sx2':sx2,\
-               'vec_dat_v':vec_dat_v,'sdx2':np.var(sdx2),'sg2':sg2}
+               'vec_dat_v':vec_dat_v,'sdg2':sdg2,'sdx2':sdx2,'sg2':sg2}
 #
 def merge_df_pred(df,pred_mat):
     """Merge the output from predict with the initial dataframe"""
@@ -729,7 +752,8 @@ def merge_df_pred(df,pred_mat):
                         'err_log_length','err_growth_rate','err_prot','err_q'))
     # Give numerical values
     dft[['pred_log_length','pred_growth_rate','pred_proteins','pred_q','err_log_length','err_growth_rate','err_prot','err_q']] = \
-    dft[['pred_log_length','pred_growth_rate','pred_proteins','pred_q','err_log_length','err_growth_rate','err_prot','err_q']].apply(pd.to_numeric)
+    dft[['pred_log_length','pred_growth_rate','pred_proteins','pred_q','err_log_length','err_growth_rate','err_prot','err_q']].apply\
+            (lambda x:pd.to_numeric(x,errors='coerce'))
     #Create subindex for merging
     dft['sub_ind'] = dft.groupby('cell_')['pred_log_length'].transform(lambda x:\
                                                                np.arange(len(x)))
@@ -741,7 +765,7 @@ def merge_df_pred(df,pred_mat):
     dff = \
     pd.concat([df.set_index(['cell_','sub_ind']),dft.set_index(['cell_','sub_ind'])],axis=1)
     dff = dff.reset_index()
-    return dff.drop(['cell_','sub_ind'],axis=1)
+    return dff.drop(['cell_','sub_ind'],axis=1),dft
 def find_best_lengths(files,pwd='/scicore/home/nimwegen/fiori/MoMA_predictions/predictions/',lengths=['length_um','length_erik','length_moma','length_raw','length_pixel']):
     """Find best length measurment """
     tmp=[]
@@ -879,6 +903,7 @@ def syntetic_corr_gen(mlam,gamma,sl2,sm2,dt,cpl=40, lenc = 25, ncel = 20):
 def ornstein_uhlenbeck(mlam,gamma,sl2,length_min=80,ncel=10,dt=.5):
     """Generate OU process with dtsim (cannot be too large otherwise non stable
     solutions). Then give back results at every dt"""
+    np.random.seed()
     length = length_min/dt
     assert (length).is_integer(), "not length integer"
     length = int(length)
@@ -903,7 +928,7 @@ def protein_prod(Q,Xnn,G0,beta,sg2,dt):
     for k in range(1,Xnn.shape[1]):
         G[:,k] = G[:,k-1]+np.exp(Xnn[:,k-1])*Q[:,k-1]*dt-beta*G[:,k-1]*dt
     return np.random.normal(loc=G,scale=np.sqrt(sg2)),G
-def sampling_from_path(dtsim,dt):
+def sampling_from_path(mat,dtsim,dt):
     """dtsim is the time interval used to generate the data whereas dt is the\
     one where we have the data (like the microscope one)"""
     sam = dt/dtsim
@@ -924,7 +949,6 @@ def X_er(st):
     return percX
 if  __name__=="__main__":
     import time
-    np.random.seed(1)
     W,X = integrated_ou(mlam=1.,gamma=0.02,sig=.03,sigm2=0.08,length=30000,ncel=1,dt=3.)
     m0 = np.array([[np.mean(W[:,0])],[np.mean(X[:,0])]])
     M0 = np.array([[np.var(W[:,0]),0],[0,np.var(X[:,0])]])

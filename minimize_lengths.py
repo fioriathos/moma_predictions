@@ -87,7 +87,7 @@ class minimize_lengths(object):
             if i=='sm2':x0[3]=self.free[i]
         x0 = [x for x in x0 if x is not None]
         return np.array(x0)
-    def minimize_both_vers(self,in_dic,x0=None,numerical=False,fun=rl.grad_obj_wrap,reg=None,factr=1e4,pgtol=1e-08):
+    def minimize_both_vers(self,in_dic,x0=None,numerical=False,fun=rl.grad_obj_wrap,reg=None,factr=1e2,pgtol=1e-10):
         """Minimize module.tot_grad_obj(t,path) at point x0={mu:,sigmas,..} considering dic['fix]={mu:,..}"""
         from scipy.optimize import fmin_l_bfgs_b
         # Initialize intial condition for first time
@@ -154,10 +154,13 @@ class minimize_lengths(object):
         if ret_grad:
             grad =\
             self.tot_objective(x=[mlam,self.gamma,sl2,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
-            return (errbar[0]/re,errbar[1],errbar[2]/re**2,errbar[3]/re**2),\
-                    (grad[0]/re,grad[1],grad[2]/re**2,grad[3]/re**2)
+            return {'error':\
+                    {'mlam':errbar[0]/re,'gamma':errbar[1],\
+                     'sl2':errbar[2]/re**2,'sm2':errbar[3]/re**2},\
+                    'grad':(grad[0]/re,grad[1],grad[2]/re**2,grad[3]/re**2)}
         else:
-            return errbar[0]/re,errbar[1],errbar[2]/re**2,errbar[3]/re**2
+            return {'mlam':errbar[0]/re,'gamma':errbar[1],\
+                     'sl2':errbar[2]/re**2,'sm2':errbar[3]/re**2},
     def correct_scaling(self,in_dic):
         res = in_dic['rescale']
         return [self.mlam/res,self.gamma,self.sl2/res**2,self.sm2/res**2]
