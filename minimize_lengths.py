@@ -87,7 +87,7 @@ class minimize_lengths(object):
             if i=='sm2':x0[3]=self.free[i]
         x0 = [x for x in x0 if x is not None]
         return np.array(x0)
-    def minimize_both_vers(self,in_dic,x0=None,numerical=False,fun=rl.grad_obj_wrap,reg=None,factr=1e4,pgtol=1e-08):
+    def minimize_both_vers(self,in_dic,x0=None,numerical=False,fun=rl.grad_obj_wrap,reg=None,factr=1e2,pgtol=1e-10):
         """Minimize module.tot_grad_obj(t,path) at point x0={mu:,sigmas,..} considering dic['fix]={mu:,..}"""
         from scipy.optimize import fmin_l_bfgs_b
         # Initialize intial condition for first time
@@ -127,6 +127,40 @@ class minimize_lengths(object):
             self.sl2= total_par[2]
             self.sm2= total_par[3]
         return ret
+    def errorbars(self,in_dic,ret_grad=True):
+        """Find errorbars (1std) on the estimated parameters"""
+        from scipy.misc import derivative
+        # Take the derivative of the gradient in order to estimate the hessian
+        # The objective is already -log_lik so the Covariance is simply the
+        # inverse of the Hessian
+        re = in_dic['rescale']
+        sl2 = self.sl2*re**2
+        sm2 = self.sm2*re**2
+        mlam = self.mlam*re
+        func = lambda x:\
+            self.tot_objective(x=[x,self.gamma,sl2,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
+        d2_ml = derivative(func, mlam, dx=max(1e-11,mlam*1e-08), n=1)
+        func = lambda x:\
+            self.tot_objective(x=[mlam,x,sl2,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
+        d2_ga = derivative(func, self.gamma, dx=max(1e-11,self.gamma*1e-08), n=1)
+        func = lambda x:\
+            self.tot_objective(x=[mlam,self.gamma,x,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
+        d2_sl = derivative(func, sl2, dx=max(1e-11,sl2*1e-08), n=1)
+        func = lambda x:\
+            self.tot_objective(x=[mlam,self.gamma,sl2,x],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
+        d2_sm = derivative(func, sm2, dx=max(1e-11,sm2*1e-08), n=1)
+        H = np.vstack((d2_ml,d2_ga,d2_sl,d2_sm))
+        errbar = np.sqrt(np.diag(np.linalg.inv(H)))
+        if ret_grad:
+            grad =\
+            self.tot_objective(x=[mlam,self.gamma,sl2,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
+            return {'error':\
+                    {'mlam':errbar[0]/re,'gamma':errbar[1],\
+                     'sl2':errbar[2]/re**2,'sm2':errbar[3]/re**2},\
+                    'grad':(grad[0]/re,grad[1],grad[2]/re**2,grad[3]/re**2)}
+        else:
+            return {'mlam':errbar[0]/re,'gamma':errbar[1],\
+                     'sl2':errbar[2]/re**2,'sm2':errbar[3]/re**2},
     def correct_scaling(self,in_dic):
         res = in_dic['rescale']
         return [self.mlam/res,self.gamma,self.sl2/res**2,self.sm2/res**2]
