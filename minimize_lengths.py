@@ -179,7 +179,40 @@ class minimize_lengths(object):
                 print('objective',_)
             theta = theta-eta*mh/(np.sqrt(sh)+eps)
         return theta,_
- 
+    def errorbars(self,in_dic,ret_grad=True):
+        """Find errorbars (1std) on the estimated parameters"""
+        from scipy.misc import derivative
+        # Take the derivative of the gradient in order to estimate the hessian
+        # The objective is already -log_lik so the Covariance is simply the
+        # inverse of the Hessian
+        sl2 = self.sl2
+        sm2 = self.sm2
+        mlam = self.mlam
+        func = lambda x:\
+            self.tot_grad_obj(x0=[x,self.gamma,sl2,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
+        d2_ml = derivative(func, mlam, dx=max(1e-11,mlam*1e-08), n=1)
+        func = lambda x:\
+            self.tot_grad_obj(x0=[mlam,x,sl2,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
+        d2_ga = derivative(func, self.gamma, dx=max(1e-11,self.gamma*1e-08), n=1)
+        func = lambda x:\
+            self.tot_grad_obj(x0=[mlam,self.gamma,x,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
+        d2_sl = derivative(func, sl2, dx=max(1e-11,sl2*1e-08), n=1)
+        func = lambda x:\
+            self.tot_grad_obj(x0=[mlam,self.gamma,sl2,x],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
+        d2_sm = derivative(func, sm2, dx=max(1e-11,sm2*1e-08), n=1)
+        H = np.vstack((d2_ml,d2_ga,d2_sl,d2_sm))
+        errbar = np.sqrt(np.diag(np.linalg.inv(H))/in_dic['n_point'])
+        if ret_grad:
+            grad =\
+            self.tot_grad_obj(x0=[mlam,self.gamma,sl2,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]*in_dic['n_point']
+            return {'error':\
+                    {'mlam':errbar[0],'gamma':errbar[1],\
+                     'sl2':errbar[2],'sm2':errbar[3]},\
+                    'grad':(grad[0],grad[1],grad[2],grad[3]),\
+                    'param':{'mlam':mlam,'gamma':self.gamma,'sl2':sl2,'sm2':sm2}}
+        else:
+            return {'mlam':errbar[0],'gamma':errbar[1],\
+                     'sl2':errbar[2],'sm2':errbar[3]}
         #if tmp['success']==False:
         #    print("Probably a problem with gradient, do numerical")
         #    tmp,total_par,lik_grad = self.minimize_both_vers(in_dic=in_dic,x0=tmp['x'],numerical=True)

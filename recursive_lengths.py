@@ -62,6 +62,52 @@ def grad_parameters(gamma,dt,mlam,sl2):
     A_gamma[0,1] = sl2/2*(2*(1-emg)/gamma**2*dt*emg-2/gamma**3*(1-emg)**2)
     A_gamma[1,0] = A_gamma[0,1]
     return {'F_gamma':F_gamma,'a_mlam':a_mlam,'a_gamma':a_gamma,'A_sl2':A_sl2,'A_gamma':A_gamma}
+def hessian_parameters(g,dt,ml,sl2):
+    """The hessian and gradient of the parameters, g=gamma,ml=mlam"""
+    ret = {}
+    for k in ['m','g','s','e']:
+        ret['A_{}'.format(k)] = np.zeros((2,2))
+        ret['a_{}'.format(k)] = np.zeros((2,1))
+        ret['F_{}'.format(k)] = np.zeros((2,2))
+        for j in ['m','g','s','e']:
+            ret['A_{}{}'.format(k,j)] = np.zeros((2,2))
+            ret['a_{}{}'.format(k,j)] = np.zeros((2,1))
+            ret['F_{}{}'.format(k,j)] = np.zeros((2,2))
+    # Reformat derivatives
+    tmp = grad_parameters(g,dt,ml,sl2)
+    ret['F_g'] = tmp['F_gamma']
+    ret['a_m'] = tmp['a_mlam']
+    ret['a_g'] = tmp['a_gamma']
+    ret['A_s'] = tmp['A_sl2']
+    ret['A_g'] = tmp['A_gamma']
+    # The derivatives of A
+    A_gg = np.zeros((2,2))
+    A_gsl = np.zeros((2,2))
+    A_gg[0,0] =  (2*(-3 - 3*dt*g - dt**2*g**2 + 3*np.exp(2*dt*g)*(-3 + dt*g) +\
+                np.exp(dt*g)*(12 + 6*dt*g + dt**2*g**2))*sl2)/(np.exp(2*dt*g)*g**5)
+    A_gg[0,1] = ((3 + 3*np.exp(2*dt*g) + 4*dt*g + 2*dt**2*g**2 -\
+                np.exp(dt*g)*(6 + 4*dt*g + dt**2*g**2))*sl2)/(np.exp(2*dt*g)*g**4)
+    A_gg[1,1] = ((-1 + np.exp(2*dt*g) - 2*dt*g - 2*dt**2*g**2)*sl2)/(np.exp(2*dt*g)*g**3)
+    A_gg[1,0] = A_gg[0,1]
+
+    A_gsl[0,0] = (3 + 2*dt*g + np.exp(2*dt*g)*(9 - 4*dt*g) - 4*np.exp(dt*g)*(3 + dt*g))/(2.*np.exp(2*dt*g)*g**4)
+    A_gsl[0,1] =  -(((-1 + np.exp(dt*g))*(-1 + np.exp(dt*g) - dt*g))/(np.exp(2*dt*g)*g**3))
+    A_gsl[1,1] = -(-1 + np.exp(2*dt*g) - 2*dt*g)/(2.*np.exp(2*dt*g)*g**2)
+    A_gsl[1,0] = A_gsl[0,1]
+    # The derivatives of F
+    F_gg = np.zeros((2,2))
+    F_gg[0,1] = (-2 + 2*np.exp(dt*g) - 2*dt*g - dt**2*g**2)/(np.exp(dt*g)*g**3)
+    F_gg[1,1] = dt**2/np.exp(dt*g)
+    # The derivatives of a
+    a_gg = np.zeros((2,1))
+    a_gml = np.zeros((2,1))
+    a_gg[0,0] = ((2 - 2*np.exp(dt*g) + 2*dt*g + dt**2*g**2)*ml)/(np.exp(dt*g)*g**3)
+    a_gg[1,0] = -((dt**2*ml)/np.exp(dt*g))
+    a_gml[0,0] = (-1 + np.exp(dt*g) - dt*g)/(np.exp(dt*g)*g**2)
+    a_gml[1,0] = dt/np.exp(dt*g)
+    #Reformat
+    ret['A_gg']=A_gg;ret['A_gs']=A_gsl;ret['F_gg']=F_gg;ret['a_gg']=a_gg;ret['a_gm']=a_gml
+    return ret
 def new_mean_cov(b, B,F,A,a):
     """Start from P(z_t|D_t)= N(b;B) and find P(z_{t+dt}|D_t) =
     N(a+Fb;A+FBF.T):= N(m,Q)  """
@@ -70,7 +116,7 @@ def new_mean_cov(b, B,F,A,a):
     Q = A+np.dot(F,np.dot(B,F.T))
     return m, Q
 def grad_new_mean_cov(b,B,F,A,a,grad_para,grad_mat_b):
-    """Grad m and Q TO CHECK"""
+    """Grad m and Q """
     F_gamma=grad_para['F_gamma']
     #######################################################
     # Grad m
@@ -92,6 +138,43 @@ def grad_new_mean_cov(b,B,F,A,a,grad_para,grad_mat_b):
     Q_sm2 = fdgf('B_sm2')
     return {'m_mlam':m_mlam,'m_gamma':m_gamma,'m_sl2':m_sl2,'m_sm2':m_sm2,\
             'Q_mlam':Q_mlam,'Q_gamma':Q_gamma,'Q_sl2':Q_sl2,'Q_sm2':Q_sm2}
+def hessian_new_mean_cov(b,B,F,A,a,H_para,H_mat_b):
+    """Hessian and gradient of m and Q """
+    #######################################################
+    # THE GRADIENTS
+    #######################################################
+    m_k = lambda k: H_para['a_{}'.format(k)]+ np.dot(H_para['F_{}'.format(k)],b)+np.dot(F,H_mat_b['b_{}'.format(k)])
+    Q_k = lambda k: H_para['A_{}'.format(k)]+np.dot(H_para['F_{}'.format(k)],np.dot(B,F.T))+\
+        np.dot(F,np.dot(H_mat_b['b_{}'.format(k)],F.T))+ np.dot(F,np.dot(B,H_para['F_{}'.format(k)].T))
+    #######################################################
+    # THE HESSIAN
+    #######################################################
+    m_kj = lambda k,j:\
+        H_para['a_{}{}'.format(k,j)]+np.dot(H_para['F_{}{}'.format(k,j)],b)+np.dot(F,H_mat_b['b_{}{}'.format(k,j)])+\
+         np.dot(H_para['F_{}'.format(k)],H_mat_b['b_{}'.format(j)]) +\
+         np.dot(H_para['F_{}'.format(j)],H_mat_b['b_{}'.format(k)])
+    trmul = lambda x,y,z: np.dot(x,np.dot(y,z.T))
+    Q_kj = lambda k,j: H_para['A_{}{}'.format(k,j)]+\
+            trmul(H_para['F_{}{}'.format(k,j)],B,F)+\
+            trmul(H_para['F_{}'.format(k)],H_mat_b['B_{}'.format(j)],F)+\
+            trmul(H_para['F_{}'.format(k)],B,H_para['F_{}'.format(j)])+\
+            trmul(H_para['F_{}'.format(j)],H_mat_b['B_{}'.format(k)],F)+\
+            trmul(F,H_mat_b['B_{}{}'.format(k,j)],F)+\
+            trmul(F,H_mat_b['B_{}'.format(k)],H_para['F_{}'.format(j)])+\
+            trmul(F,B,H_para['F_{}{}'.format(k,j)])+\
+            trmul(F,H_mat_b['B_{}'.format(j)],H_para['F_{}'.format(k)])+\
+            trmul(H_para['F_{}'.format(j)],B,H_para['F_{}'.format(k)])
+    ########################################################
+    # FILL THE MATRIX
+    ########################################################
+    ret = {}
+    for k in ['m','g','s','e']:
+        ret['m_{}'.format(k)] = m_k(k)
+        ret['Q_{}'.format(k)] = Q_k(k)
+        for j in ['m','g','s','e']:
+            ret['m_{}{}'.format(k,j)] = m_kj(k,j)
+            ret['Q_{}{}'.format(k,j)] = Q_kj(k,j)
+    return ret
 def posteriori_matrices(x,m,Q,sm2):
     """    P(z_{t+dt}|D_{t+dt})=P(x_{t+dt}^m|z_{t+dt})P(z_{t+dt}|D_t)
     =N(x_{t+dt},sm2)N(m,Q)=N(b',B') """
@@ -106,7 +189,7 @@ def posteriori_matrices(x,m,Q,sm2):
     B_[1,0] = B_[0,1]
     return b_, B_
 def grad_posteriori_matrices(x,m,Q,sm2,grad_mat):
-    """Grad b and B TO CHECK"""
+    """Grad b and B """
     den = sm2+Q[0,0]
     #########################################################
     # GRAD B
@@ -140,6 +223,145 @@ def grad_posteriori_matrices(x,m,Q,sm2,grad_mat):
     return {'B_gamma':dB('Q_gamma'),'B_mlam':dB('Q_mlam'),'B_sl2':dB('Q_sl2'),\
             'B_sm2':B_sm2,'b_sm2':b_sm2,\
             'b_gamma':db('m_gamma','Q_gamma'),'b_mlam':db('m_mlam','Q_mlam'),'b_sl2':db('m_sl2','Q_sl2')}
+def hessian_posteriori_matrices(xm,m,Q,sm2,H_mat):
+    """Return the gradient and the hessian of the posteriori matrices b and B. xm is the datapoint"""
+    ########################################################
+    # GRADIENT AND HESSIAN OF B AND b
+    ########################################################
+    def B00_x(x):
+        if x=='e': sd=1
+        else: sd=0
+        dQ = H_mat['Q_{}'.format(x)][0,0]
+        Q0=Q[0,0]; den=Q0+sm2
+        return ((sd*Q0+sm2*dQ)*den-sm2*Q0*(dQ+sd))/den**2
+    def B00_xy(x,y):
+        if x=='e': dxe=1
+        else: dxe=0
+        if y=='e': dye=1
+        else: dye=0
+        dQx = H_mat['Q_{}'.format(x)][0,0]
+        dQy = H_mat['Q_{}'.format(y)][0,0]
+        dQxy = H_mat['Q_{}{}'.format(x,y)][0,0]
+        Q00=Q[0,0]
+        return (-2*dxe*dye*Q00**2 + (2*dQy*dxe + 2*dQx*dye)*Q00*sm2 +\
+        (-2*dQx*dQy + dQxy*Q00)*sm2**2 + dQxy*sm2**3)/(Q00 + sm2)**3
+    def B01_x(x):
+        #Same form as B00
+        if x=='e': sd=1
+        else: sd=0
+        dQ = H_mat['Q_{}'.format(x)][0,1]
+        Q0=Q[0,1]; den=Q0+sm2
+        return ((sd*Q0+sm2*dQ)*den-sm2*Q0*(dQ+sd))/den**2
+    def B01_xy(x,y):
+        #Same form as B00
+        if x=='e': dxe=1
+        else: dxe=0
+        if y=='e': dye=1
+        else: dye=0
+        dQx = H_mat['Q_{}'.format(x)][0,1]
+        dQy = H_mat['Q_{}'.format(y)][0,1]
+        dQxy = H_mat['Q_{}{}'.format(x,y)][0,1]
+        Q00=Q[0,1]
+        return (-2*dxe*dye*Q00**2 + (2*dQy*dxe + 2*dQx*dye)*Q00*sm2 +\
+        (-2*dQx*dQy + dQxy*Q00)*sm2**2 + dQxy*sm2**3)/(Q00 + sm2)**3
+    def B_11(x):
+        if x=='e': dxe=1
+        else: dxe=0
+        Q00=Q[0,0];Q01=Q[0,1]
+        dQx = H_mat['Q_{}'.format(x)]
+        dQ00x=dQx[0,0]; dQ01x=dQx[0,1]; dQ11x=dQx[1,1]
+        return dQ11x + ((dQ00x + dxe)*Q01**2)/(Q00 + sm2)**2 - (2*dQ01x*Q01)/(Q00 + sm2)
+    def B_11(x,y):
+        if x=='e': dxe=1
+        else: dxe=0
+        if y=='e': dye=1
+        else: dye=0
+        Q00=Q[0,0];Q01=Q[0,1]
+        dQx = H_mat['Q_{}'.format(x)]
+        dQy = H_mat['Q_{}'.format(y)]
+        dQxy = H_mat['Q_{}{}'.format(x,y)]
+        dQ00x = dQx[0,0];dQ00y = dQy[0,0]
+        dQ01x = dQx[0,1];dQ01y = dQy[0,1]
+        dQ00xy= dQxy[0,0];dQ01xy= dQxy[0,1];dQ11xy= dQxy[1,1]
+        return   dQ11xy - (2*(dQ00x + dxe)*(dQ00y + dye)*Q01**2)/(Q00 + sm2)**3 +\
+        (2*dQ01y*(dQ00x + dxe)*Q01)/(Q00 + sm2)**2 +\
+        (2*dQ01x*(dQ00y + dye)*Q01)/(Q00 + sm2)**2 + (dQ00xy*Q01**2)/(Q00 + sm2)**2 -\
+        (2*dQ01x*dQ01y)/(Q00 + sm2) - (2*dQ01xy*Q01)/(Q00 + sm2)
+    def b_0(x):
+        if x=='e': dxe=1
+        else: dxe=0
+        dQ00x = H_mat['Q_{}'.format(x)][0,0]
+        dm00x = H_mat['m_{}'.format(x)][0,0]
+        Q00=Q[0,0];m00=m[0,0]
+        return (Q00*(dm00x*sm2 + dxe*(m00 - xm)) + sm2*(dm00x*sm2 + dQ00x*(-m00 + xm)))/(Q00 + sm2)**2
+    def b_0(x,y):
+        if x=='e': dxe=1
+        else: dxe=0
+        if y=='e': dye=1
+        else: dye=0
+        dQ00x = H_mat['Q_{}'.format(x)][0,0]
+        dQ00xy = H_mat['Q_{}{}'.format(x,y)][0,0]
+        dQ00y = H_mat['Q_{}'.format(y)][0,0]
+        dm00x = H_mat['m_{}'.format(x)][0,0]
+        dm00y = H_mat['m_{}'.format(y)][0,0]
+        dm00xy = H_mat['m_{}{}'.format(x,y)][0,0]
+        Q00=Q[0,0];m00=m[0,0]
+        return -(((dQ00y + dye)*(Q00 + sm2)*(dxe*m00 + dm00x*sm2 + dQ00x*xm) -\
+           (Q00 + sm2)**2*(dm00y*dxe + dm00x*dye + dm00xy*sm2 + dQ00xy*xm) +\
+           (dQ00x + dxe)*(Q00 + sm2)*(dye*m00 + dm00y*sm2 + dQ00y*xm) -\
+           2*(dQ00x + dxe)*(dQ00y + dye)*(m00*sm2 + Q00*xm) +\
+           dQ00xy*(Q00 + sm2)*(m00*sm2 + Q00*xm))/(Q00 + sm2)**3)
+    def b_1(x):
+        if x=='e': dxe=1
+        else: dxe=0
+        dQx = H_mat['Q_{}'.format(x)]
+        dQ00x = dQx[0,0]
+        dQ01x = dQx[0,1]
+        dmx = H_mat['m_{}'.format(x)]
+        dm10x = dmx[1,0];dm00x = dmx[0,0]
+        Q00=Q[0,0];m00=m[0,0]
+        Q01=Q[0,1];m10=m[1,0]
+        return dm10x - (dm00x*Q01)/(Q00 + sm2) -\
+              ((dQ00x + dxe)*Q01*(-m00 + xm))/(Q00 + sm2)**2 + (dQ01x*(-m00 + xm))/(Q00 + sm2)
+    def b_1(x,y):
+        if x=='e': dxe=1
+        else: dxe=0
+        if y=='e': dye=1
+        else: dye=0
+        Q00=Q[0,0];Q01=Q[0,1]
+        dQx = H_mat['Q_{}'.format(x)]
+        dQy = H_mat['Q_{}'.format(y)]
+        dQxy = H_mat['Q_{}{}'.format(x,y)]
+        dQ00x = dQx[0,0];dQ00y = dQy[0,0]
+        dQ01x = dQx[0,1];dQ01y = dQy[0,1]
+        dQ00xy= dQxy[0,0];dQ01xy= dQxy[0,1];dQ11xy= dQxy[1,1]
+        dmx = H_mat['m_{}'.format(x)]
+        dmy = H_mat['m_{}'.format(y)]
+        dmxy = H_mat['m_{}{}'.format(x,y)]
+        dm10x = dmx[1,0];dm00x = dmx[0,0]
+        dm10y = dmy[1,0];dm00y = dmy[0,0]
+        dm10xy = dmxy[1,0];dm00xy = dmxy[0,0]
+        return -((-(dm00y*(dQ00x + dxe)*Q01*(Q00 + sm2)) -\
+           dm00x*(dQ00y + dye)*Q01*(Q00 + sm2) + dm00y*dQ01x*(Q00 + sm2)**2 +\
+           dm00x*dQ01y*(Q00 + sm2)**2 + dm00xy*Q01*(Q00 + sm2)**2 -\
+           dm10xy*(Q00 + sm2)**3 - 2*(dQ00x + dxe)*(dQ00y + dye)*Q01*(-m00 + xm) +\
+           dQ01y*(dQ00x + dxe)*(Q00 + sm2)*(-m00 + xm) +\
+           dQ01x*(dQ00y + dye)*(Q00 + sm2)*(-m00 + xm) +\
+           dQ00xy*Q01*(Q00 + sm2)*(-m00 + xm) - dQ01xy*(Q00 + sm2)**2*(-m00 + xm))/\
+            (Q00 + sm2)**3)
+    ########################################################
+    # FILL THE MATRIX
+    ########################################################
+    ret = {}
+    build_vec = lambda x,y: np.array([[x],[y]])
+    build_mat= lambda x,y,z: np.array([[x,y],[y,z]])
+    for k in ['m','g','s','e']:
+        ret['b_{}'.format(k)] = build_vec(b_0(k),b_1(k))
+        ret['B_{}'.format(k)] = build_mat(B_00(k),B_01(k),B_11(k))
+        for j in ['m','g','s','e']:
+            ret['m_{}{}'.format(k,j)] = build_vec(b_0(k,j),b_1(k,j))
+            ret['Q_{}{}'.format(k,j)] = build_mat(B_00(k,j),B_01(k,j),B_11(k,j))
+    return ret
 def log_likelihood(x,m,Q,sm2):
     """Return P(x_{t+dt}|D_t) in log """
     # if den gets too small..
@@ -152,6 +374,7 @@ def log_likelihood(x,m,Q,sm2):
     else:
         tmp =  -(x-m[0,0])**2/(2*den)-0.5*(np.log(den)+np.log(2*np.pi))
     return tmp
+
 def grad_log_likelihood(x,m,Q,sm2,grad_mat):
     """Give gradient of log likelihood """
     den = sm2 + Q[0,0]
@@ -165,34 +388,37 @@ def grad_log_likelihood(x,m,Q,sm2,grad_mat):
                     [grad('m_gamma','Q_gamma')],\
                     [grad('m_sl2','Q_sl2')],\
                     [grad('m_sm2','Q_sm2',1)]])
-#------------------ OBJECTIVE OVER CELL CYCLE/ LANE AND TOTAL-----------------------------------
-#def cell_division_likelihood_and_grad(m,Q,grad_mat_Q,sd2,rescale,grad=True):
-#    """Cell division likelihood and gradient after asymmetric cell division with
-#    std=sqrt(sd2)"""
-#    pref_l = (Q[0,1]**2-Q[1,1]*(Q[0,0]+sd2))
-#    pref_r = (4*Q[0,1]**2-Q[1,1]*(Q[0,0]+sd2))
-#    pref = pref_l/pref_r
-#    S = np.array([[Q[0,0]+sd2,2*Q[0,1]],[2*Q[0,1],Q[1,1]]])*pref
-#    s = np.array([[m[0,0]-rescale*np.log(2)],[m[1,0]]])
-#    grad_matS = {}
-#    def gm(x):
-#        GQ = grad_mat_Q['{}'.format(x)]
-#        gpref_l = 2*Q[0,1]*GQ[0,1]-GQ[1,1]*(Q[0,0]+sd2)-Q[1,1]*GQ[0,0]
-#        gpref_r = 8*Q[0,1]*GQ[0,1]-GQ[1,1]*(Q[0,0]+sd2)-Q[1,1]*GQ[0,0]
-#        gpref = (gpref_l*pref_r-pref_l*gpref_r)/(pref_r**2)
-#        grad_matS['{}'.format(x)] = \
-#                np.array([[Q[0,0]+sd2,2*Q[0,1]],[2*Q[0,1],Q[1,1]]])*gpref+\
-#                np.array([[GQ[0,0],2*GQ[0,1]],[2*GQ[0,1],GQ[1,1]]])*pref
-#    def gv(x):
-#        mat = grad_mat_Q['{}'.format(x)]
-#        grad_matS['{}'.format(x)] = \
-#        np.array([[mat[0,0]],[mat[1,0]]])
-#    if grad:
-#        gv('m_mlam');gv('m_gamma');gv('m_sl2');gv('m_sm2')
-#        gm('Q_mlam');gm('Q_gamma');gm('Q_sl2');gm('Q_sm2')
-#        return s, S, grad_matS
-#    else:
-#        return s,S
+def hessian_log_likelihood(xm,m,Q,sm2,H_mat):
+    """Give gradient and hessian of log lik"""
+    def G(x):
+        if x=='e': dxe=1
+        else: dxe=0
+        dQ00x = H_mat['Q_{}'.format(x)][0,0]
+        dm00x = H_mat['m_{}'.format(x)][0,0]
+        Q00=Q[0,0];m00=m[0,0]
+        return (-((dQ00x + dxe)*(Q00 + sm2)) + 2*dm00x*(Q00 + sm2)*(-m00 + xm)\
+                + (dQ00x + dxe)*(-m00 + xm)**2)/(2.*(Q00 + sm2)**2)
+    def H(x,y):
+        if x=='e': dxe=1
+        else: dxe=0
+        if y=='e': dye=1
+        else: dye=0
+        dQ00x = H_mat['Q_{}'.format(x)][0,0]
+        dQ00xy = H_mat['Q_{}{}'.format(x,y)][0,0]
+        dQ00y = H_mat['Q_{}'.format(y)][0,0]
+        dm00x = H_mat['m_{}'.format(x)][0,0]
+        dm00y = H_mat['m_{}'.format(y)][0,0]
+        dm00xy = H_mat['m_{}{}'.format(x,y)][0,0]
+        Q00=Q[0,0];m00=m[0,0]
+        return         ((dQ00x + dxe)*(dQ00y + dye)*(Q00 + sm2) - 2*dm00x*dm00y*(Q00 + sm2)**2 -\
+         dQ00xy*(Q00 + sm2)**2 - 2*dm00y*(dQ00x + dxe)*(Q00 + sm2)*(-m00 + xm) -\
+         2*dm00x*(dQ00y + dye)*(Q00 + sm2)*(-m00 + xm) + 2*dm00xy*(Q00 + sm2)**2*(-m00 + xm) -\
+         2*(dQ00x + dxe)*(dQ00y + dye)*(-m00 + xm)**2 + dQ00xy*(Q00 + sm2)*(-m00 + xm)**2)/\
+       (2.*(Q00 + sm2)**3)
+    grad = np.array([G(x) for x in ['m','g','s','e']])[:,None]
+    hess = np.array([H(x,y) for y in ['m','g','s','e'] for x in\
+                     ['m','g','s','e']]).reshape((2,2))
+    return grad, hess
 def cell_division_likelihood_and_grad(m,Q,grad_mat_Q,sd2,rescale,grad=True):
     S = np.array([[Q[0,0]+sd2,Q[0,1]],[Q[0,1],Q[1,1]]])
     s = np.array([[m[0,0]-rescale*np.log(2)],[m[1,0]]])
@@ -211,6 +437,9 @@ def cell_division_likelihood_and_grad(m,Q,grad_mat_Q,sd2,rescale,grad=True):
         return s, S, grad_matS
     else:
         return s,S
+def hess_cell_division_likelihood(m,Q,grad_mat_Q,sd2,rescale):
+    """With the new defintion of the division we do not change gradient"""
+    return grad_mat_Q
 
 def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,grad_matS,rescale,sd2):
     """To check"""
