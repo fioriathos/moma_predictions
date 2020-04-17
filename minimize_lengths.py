@@ -5,8 +5,8 @@ import time
 imp.reload(rl)
 class minimize_lengths(object):
     """Do minimization on """
-    def __init__(self, free,fixed={},\
-                 method='L-BFGS-B',boundary=None):
+    def __init__(self, free,boundary,fixed={},\
+                 method='L-BFGS-B',factr=1e01):
         """These 3 dictionary fixed the free param, constrained param, boundary"""
         assert type(fixed)==dict
         assert type(free)==dict;assert free!={}
@@ -14,8 +14,9 @@ class minimize_lengths(object):
         self.cons=None #constraints
         self.method = method
         self.boundary = boundary
-        if boundary==None: # Only positive values allowed
-            self.boundary = [(1e-13,None)]*len(free)
+        self.factr= factr
+        #if boundary==None: # Only positive values allowed
+        #    self.boundary = [(1e-13,None)]*len(free)
         #Check all keys are either fixed or not
         assert set(fixed.keys())|set((free.keys()))==set(('sm2', 'sl2',\
                                                           'gamma','mlam'))
@@ -67,8 +68,26 @@ class minimize_lengths(object):
         """Return total obj and grad depending on the x0 np.array"""
         # From the reduced x0 rebuild entire vector and compute obj and grad
         #ts = time.time()
+        print(x0)
         tmp =\
         self.tot_objective(self.rebuild_param(x0,**self.fixed),in_dic,fun,reg)
+        obj = tmp[0]
+        # return the sliced grad
+        grad =self.fix_par(tmp[1], **self.fixed)[0] 
+        #print(time.time()-ts)
+        #RESCALE LOG LIKELIHOOD IN ORDER TO HAVE MORE SUITABLE NUMBERS
+        obj = obj/in_dic['n_point']
+        grad = grad/in_dic['n_point']
+        return obj,grad.reshape(-1)
+    def tot_grad_obj_N(self,x0,in_dic,fun=rl.grad_obj_wrap,reg=None):
+        """Return total obj and grad depending on the x0 np.array"""
+        # From the reduced x0 rebuild entire vector and compute obj and grad
+        #ts = time.time()
+        xn = self.rebuild_param(x0,**self.fixed)
+        xn = [xn[0]*1e-02,xn[1]*1e-02,xn[2]*1e-07,xn[3]*1e-04]
+        print(xn)
+        tmp =\
+        self.tot_objective(xn,in_dic,fun,reg)
         obj = tmp[0]
         # return the sliced grad
         grad =self.fix_par(tmp[1], **self.fixed)[0] 
@@ -87,7 +106,7 @@ class minimize_lengths(object):
             if i=='sm2':x0[3]=self.free[i]
         x0 = [x for x in x0 if x is not None]
         return np.array(x0)
-    def minimize_both_vers(self,in_dic,x0=None,numerical=False,fun=rl.grad_obj_wrap,reg=None,factr=1e4,pgtol=1e-08):
+    def minimize_both_vers(self,in_dic,x0=None,numerical=False,fun=rl.grad_obj_wrap,reg=None,pgtol=1e-08):
         """Minimize module.tot_grad_obj(t,path) at point x0={mu:,sigmas,..} considering dic['fix]={mu:,..}"""
         from scipy.optimize import fmin_l_bfgs_b
         # Initialize intial condition for first time
@@ -98,11 +117,11 @@ class minimize_lengths(object):
         if numerical:
             funct = lambda x,y,z:\
                 self.tot_grad_obj(x0=x,in_dic=y,fun=z,reg=reg)[0]
-            x,obj,tmp = fmin_l_bfgs_b(funct, x0, args=(in_dic,fun,reg),\
-                        approx_grad=True,epsilon=1e-08,bounds=self.boundary,factr=factr,pgtol=pgtol)
+            x,obj,tmp = fmin_l_bfgs_b(funct, x0, args=(in_dic,fun),\
+                        approx_grad=True,epsilon=1e-08,bounds=self.boundary,factr=self.factr,pgtol=pgtol)
         else:
             x,obj,tmp = fmin_l_bfgs_b(self.tot_grad_obj,x0,args=(in_dic,fun,reg),\
-                        fprime=None,bounds=self.boundary,factr=factr,pgtol=pgtol)
+                        fprime=None,bounds=self.boundary,factr=self.factr,pgtol=pgtol,iprint=-101)
         total_par = self.rebuild_param(x,**self.fixed)
         return tmp,total_par,obj
     def minimize(self,in_dic, x0=None, numerical=False,\

@@ -142,11 +142,11 @@ def grad_posteriori_matrices(x,m,Q,sm2,grad_mat):
             'b_gamma':db('m_gamma','Q_gamma'),'b_mlam':db('m_mlam','Q_mlam'),'b_sl2':db('m_sl2','Q_sl2')}
 def log_likelihood(x,m,Q,sm2):
     """Return P(x_{t+dt}|D_t) in log """
-    den = sm2+Q[0,0]
     # if den gets too small..
     #np.seterr(invalid='raise') # if log negative stop everything
-    assert den>0, "wrong state space Q[00]={} and sm2 + {}. Give other initial\
-    conditions or increase the rescaling".format(Q[0,0],sm2)
+    den = Q[0,0]+sm2
+    assert Q[0,0]>=0, "Q[00]={} must be positivie! The paramters are non\
+    physicals conditions or increase the rescaling".format(Q[0,0])
     if den<1e-08:
         tmp = -(x-m[0,0])**2/(2*den)-0.5*(np.log(1e10*den)-np.log(1e10)+np.log(2*np.pi))
     else:
@@ -695,6 +695,19 @@ def ornstein_uhlenbeck(mlam,gamma,sl2,length=30,ncel=10,dt=3.,dtsim=1):
     for k in range(1,lengthsim):
         mat[:,k]=mat[:,k-1]-gamma*(mat[:,k-1]-mlam)*dtsim+add[:,k]
     return mat[:,::sam]
+def give_unique_dataset(df,step,nump=3):
+    """Denoise the dataset and rebuild step independent out of it! """
+    d3glu = denoised_dataset(df,step,nump)
+    tmp = []
+    k=0 
+    for dtm in d3glu:
+        dtm = dtm.drop(['cell','Unnamed: 0','lane_ID'],axis=1)
+        dtm['date']=dtm['date']+'_{}_'.format(k)
+        dtm['cell'] = dtm['date']+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))+dtm['id'].apply(lambda x: str(x))
+        dtm['lane_ID'] = dtm['date']+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))
+        tmp.append(dtm)
+        k+=1
+    return pd.concat(tmp,ignore_index=True)
 def integrated_ou(mlam,gamma,sl2,sm2,X0=1,sx0=0.1,length=30,ncel=10,dt=3.,dtsim=1):
     X = ornstein_uhlenbeck(mlam,gamma,sl2,length,ncel,dt,dtsim)
     X0 = np.random.normal(loc=np.ones((ncel,1)),scale=sx0)
