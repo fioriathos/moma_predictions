@@ -179,6 +179,10 @@ class minimize_lengths(object):
                 print('objective',_)
             theta = theta-eta*mh/(np.sqrt(sh)+eps)
         return theta,_
+    def err_bar(self,in_dic):
+        H,G = rl.hessian_and_grad_tot([self.mlam,self.gamma,self.sl2,self.sm2],in_dic)
+        errbar = np.sqrt(np.diag(np.linalg.inv(H)))
+        return {'gradient':G,'errors':errbar}
     def errorbars(self,in_dic,ret_grad=True):
         """Find errorbars (1std) on the estimated parameters"""
         from scipy.misc import derivative
@@ -213,15 +217,8 @@ class minimize_lengths(object):
         else:
             return {'mlam':errbar[0],'gamma':errbar[1],\
                      'sl2':errbar[2],'sm2':errbar[3]}
-        #if tmp['success']==False:
-        #    print("Probably a problem with gradient, do numerical")
-        #    tmp,total_par,lik_grad = self.minimize_both_vers(in_dic=in_dic,x0=tmp['x'],numerical=True)
-        #print("--- %s seconds ---" % (time.time() - start_time))
-#        self.<mlam>= total_par[1]
-#        self.gamma= total_par[2]
-#        self.sl2= total_par[3]
-#        self.sm2= total_par[4]
-#        return tmp,total_par,lik_grad
+        return tmp,total_par,lik_grad
+
 #    @jit
 #    def row_slice(self, xt, nproc):
 #        """Return sliced array in nproc times"""

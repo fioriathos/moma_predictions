@@ -140,12 +140,15 @@ def grad_new_mean_cov(b,B,F,A,a,grad_para,grad_mat_b):
             'Q_mlam':Q_mlam,'Q_gamma':Q_gamma,'Q_sl2':Q_sl2,'Q_sm2':Q_sm2}
 def hessian_new_mean_cov(b,B,F,A,a,H_para,H_mat_b):
     """Hessian and gradient of m and Q """
+    trmul = lambda x,y,z: np.dot(x,np.dot(y,z.T))
     #######################################################
     # THE GRADIENTS
     #######################################################
     m_k = lambda k: H_para['a_{}'.format(k)]+ np.dot(H_para['F_{}'.format(k)],b)+np.dot(F,H_mat_b['b_{}'.format(k)])
-    Q_k = lambda k: H_para['A_{}'.format(k)]+np.dot(H_para['F_{}'.format(k)],np.dot(B,F.T))+\
-        np.dot(F,np.dot(H_mat_b['b_{}'.format(k)],F.T))+ np.dot(F,np.dot(B,H_para['F_{}'.format(k)].T))
+    Q_k = lambda k: H_para['A_{}'.format(k)]+\
+            trmul(H_para['F_{}'.format(k)],B,F)+\
+            trmul(F,H_mat_b['B_{}'.format(k)],F)+\
+            trmul(F,B,H_para['F_{}'.format(k)])
     #######################################################
     # THE HESSIAN
     #######################################################
@@ -153,7 +156,6 @@ def hessian_new_mean_cov(b,B,F,A,a,H_para,H_mat_b):
         H_para['a_{}{}'.format(k,j)]+np.dot(H_para['F_{}{}'.format(k,j)],b)+np.dot(F,H_mat_b['b_{}{}'.format(k,j)])+\
          np.dot(H_para['F_{}'.format(k)],H_mat_b['b_{}'.format(j)]) +\
          np.dot(H_para['F_{}'.format(j)],H_mat_b['b_{}'.format(k)])
-    trmul = lambda x,y,z: np.dot(x,np.dot(y,z.T))
     Q_kj = lambda k,j: H_para['A_{}{}'.format(k,j)]+\
             trmul(H_para['F_{}{}'.format(k,j)],B,F)+\
             trmul(H_para['F_{}'.format(k)],H_mat_b['B_{}'.format(j)],F)+\
@@ -246,32 +248,36 @@ def hessian_posteriori_matrices(xm,m,Q,sm2,H_mat):
         return (-2*dxe*dye*Q00**2 + (2*dQy*dxe + 2*dQx*dye)*Q00*sm2 +\
         (-2*dQx*dQy + dQxy*Q00)*sm2**2 + dQxy*sm2**3)/(Q00 + sm2)**3
     def B01_x(x):
-        #Same form as B00
-        if x=='e': sd=1
-        else: sd=0
-        dQ = H_mat['Q_{}'.format(x)][0,1]
-        Q0=Q[0,1]; den=Q0+sm2
-        return ((sd*Q0+sm2*dQ)*den-sm2*Q0*(dQ+sd))/den**2
+        if x=='e': dxe=1
+        else: dxe=0
+        dQ = H_mat['Q_{}'.format(x)]
+        dQ00x = dQ[0,0];dQ01x = dQ[0,1]
+        Q00=Q[0,0]; Q01=Q[0,1]
+        return (dQ01x*sm2*(Q00 + sm2) + (-(dQ00x*sm2) + Q00*dxe)*Q01)/(Q00 + sm2)**2
     def B01_xy(x,y):
-        #Same form as B00
         if x=='e': dxe=1
         else: dxe=0
         if y=='e': dye=1
         else: dye=0
-        dQx = H_mat['Q_{}'.format(x)][0,1]
-        dQy = H_mat['Q_{}'.format(y)][0,1]
-        dQxy = H_mat['Q_{}{}'.format(x,y)][0,1]
-        Q00=Q[0,1]
-        return (-2*dxe*dye*Q00**2 + (2*dQy*dxe + 2*dQx*dye)*Q00*sm2 +\
-        (-2*dQx*dQy + dQxy*Q00)*sm2**2 + dQxy*sm2**3)/(Q00 + sm2)**3
-    def B_11(x):
+        Q00=Q[0,0];Q01=Q[0,1]
+        dQx = H_mat['Q_{}'.format(x)]
+        dQy = H_mat['Q_{}'.format(y)]
+        dQxy = H_mat['Q_{}{}'.format(x,y)]
+        dQ00x = dQx[0,0];dQ00y = dQy[0,0]
+        dQ01x = dQx[0,1];dQ01y = dQy[0,1]
+        dQ00xy= dQxy[0,0];dQ01xy= dQxy[0,1];dQ11xy= dQxy[1,1]
+
+        return    (Q01*((-(dQ00y*dxe) - (dQ00x + 2*dxe)*dye)*Q00 + (dQ00y*(2*dQ00x + dxe) + dQ00x*dye - dQ00xy*Q00)*sm2 -\
+            dQ00xy*sm2**2) + (Q00 + sm2)*((dQ01y*dxe + dQ01x*dye)*Q00 - (dQ00y*dQ01x + dQ00x*dQ01y - dQ01xy*Q00)*sm2 +\
+            dQ01xy*sm2**2))/(Q00 + sm2)**3
+    def B11_x(x):
         if x=='e': dxe=1
         else: dxe=0
         Q00=Q[0,0];Q01=Q[0,1]
         dQx = H_mat['Q_{}'.format(x)]
         dQ00x=dQx[0,0]; dQ01x=dQx[0,1]; dQ11x=dQx[1,1]
         return dQ11x + ((dQ00x + dxe)*Q01**2)/(Q00 + sm2)**2 - (2*dQ01x*Q01)/(Q00 + sm2)
-    def B_11(x,y):
+    def B11_xy(x,y):
         if x=='e': dxe=1
         else: dxe=0
         if y=='e': dye=1
@@ -287,14 +293,14 @@ def hessian_posteriori_matrices(xm,m,Q,sm2,H_mat):
         (2*dQ01y*(dQ00x + dxe)*Q01)/(Q00 + sm2)**2 +\
         (2*dQ01x*(dQ00y + dye)*Q01)/(Q00 + sm2)**2 + (dQ00xy*Q01**2)/(Q00 + sm2)**2 -\
         (2*dQ01x*dQ01y)/(Q00 + sm2) - (2*dQ01xy*Q01)/(Q00 + sm2)
-    def b_0(x):
+    def b0_x(x):
         if x=='e': dxe=1
         else: dxe=0
         dQ00x = H_mat['Q_{}'.format(x)][0,0]
         dm00x = H_mat['m_{}'.format(x)][0,0]
         Q00=Q[0,0];m00=m[0,0]
         return (Q00*(dm00x*sm2 + dxe*(m00 - xm)) + sm2*(dm00x*sm2 + dQ00x*(-m00 + xm)))/(Q00 + sm2)**2
-    def b_0(x,y):
+    def b0_xy(x,y):
         if x=='e': dxe=1
         else: dxe=0
         if y=='e': dye=1
@@ -311,7 +317,7 @@ def hessian_posteriori_matrices(xm,m,Q,sm2,H_mat):
            (dQ00x + dxe)*(Q00 + sm2)*(dye*m00 + dm00y*sm2 + dQ00y*xm) -\
            2*(dQ00x + dxe)*(dQ00y + dye)*(m00*sm2 + Q00*xm) +\
            dQ00xy*(Q00 + sm2)*(m00*sm2 + Q00*xm))/(Q00 + sm2)**3)
-    def b_1(x):
+    def b1_x(x):
         if x=='e': dxe=1
         else: dxe=0
         dQx = H_mat['Q_{}'.format(x)]
@@ -323,12 +329,12 @@ def hessian_posteriori_matrices(xm,m,Q,sm2,H_mat):
         Q01=Q[0,1];m10=m[1,0]
         return dm10x - (dm00x*Q01)/(Q00 + sm2) -\
               ((dQ00x + dxe)*Q01*(-m00 + xm))/(Q00 + sm2)**2 + (dQ01x*(-m00 + xm))/(Q00 + sm2)
-    def b_1(x,y):
+    def b1_xy(x,y):
         if x=='e': dxe=1
         else: dxe=0
         if y=='e': dye=1
         else: dye=0
-        Q00=Q[0,0];Q01=Q[0,1]
+        Q00=Q[0,0];Q01=Q[0,1];m00=m[0,0]
         dQx = H_mat['Q_{}'.format(x)]
         dQy = H_mat['Q_{}'.format(y)]
         dQxy = H_mat['Q_{}{}'.format(x,y)]
@@ -356,11 +362,12 @@ def hessian_posteriori_matrices(xm,m,Q,sm2,H_mat):
     build_vec = lambda x,y: np.array([[x],[y]])
     build_mat= lambda x,y,z: np.array([[x,y],[y,z]])
     for k in ['m','g','s','e']:
-        ret['b_{}'.format(k)] = build_vec(b_0(k),b_1(k))
-        ret['B_{}'.format(k)] = build_mat(B_00(k),B_01(k),B_11(k))
+        ret['b_{}'.format(k)] = build_vec(b0_x(k),b1_x(k))
+        ret['B_{}'.format(k)] = build_mat(B00_x(k),B01_x(k),B11_x(k))
         for j in ['m','g','s','e']:
-            ret['m_{}{}'.format(k,j)] = build_vec(b_0(k,j),b_1(k,j))
-            ret['Q_{}{}'.format(k,j)] = build_mat(B_00(k,j),B_01(k,j),B_11(k,j))
+            ret['b_{}{}'.format(k,j)] = build_vec(b0_xy(k,j),b1_xy(k,j))
+            ret['B_{}{}'.format(k,j)] =\
+            build_mat(B00_xy(k,j),B01_xy(k,j),B11_xy(k,j))
     return ret
 def log_likelihood(x,m,Q,sm2):
     """Return P(x_{t+dt}|D_t) in log """
@@ -417,7 +424,7 @@ def hessian_log_likelihood(xm,m,Q,sm2,H_mat):
        (2.*(Q00 + sm2)**3)
     grad = np.array([G(x) for x in ['m','g','s','e']])[:,None]
     hess = np.array([H(x,y) for y in ['m','g','s','e'] for x in\
-                     ['m','g','s','e']]).reshape((2,2))
+                     ['m','g','s','e']]).reshape((4,4))
     return grad, hess
 def cell_division_likelihood_and_grad(m,Q,grad_mat_Q,sd2,rescale,grad=True):
     S = np.array([[Q[0,0]+sd2,Q[0,1]],[Q[0,1],Q[1,1]]])
@@ -439,10 +446,12 @@ def cell_division_likelihood_and_grad(m,Q,grad_mat_Q,sd2,rescale,grad=True):
         return s,S
 def hess_cell_division_likelihood(m,Q,grad_mat_Q,sd2,rescale):
     """With the new defintion of the division we do not change gradient"""
-    return grad_mat_Q
+    S = np.array([[Q[0,0]+sd2,Q[0,1]],[Q[0,1],Q[1,1]]])
+    s = np.array([[m[0,0]-rescale*np.log(2)],[m[1,0]]])
+    return s,S,grad_mat_Q
 
 def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,grad_matS,rescale,sd2):
-    """To check"""
+    """Objective and gradient over 1 cell cycle"""
     ##### likelihood and gradient at initial conditions
     ll = log_likelihood(W[0,0],s,S,sm2)
     gll = grad_log_likelihood(W[0,0],s,S,sm2,grad_matS)
@@ -468,8 +477,35 @@ def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,grad_matS,rescale,sd2):
     # Find next cell initial conditions (9% asym div)
     s, S, grad_matS = cell_division_likelihood_and_grad(m,Q,grad_mat_Q,sd2,rescale)
     return -ll, -gll, s, S, grad_matS
+def hessian_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,grad_matS,rescale,sd2):
+    """grad and Hessian 1 cell cycle"""
+    ##### likelihood and gradient at initial conditions
+    gll,hll = hessian_log_likelihood(W[0,0],s,S,sm2,grad_matS)
+    #### Initialize parameters for recurrence
+    F, A, a = parameters(gamma,dt,mlam,sl2)
+    grad_param = hessian_parameters(gamma,dt,mlam,sl2)
+    ##### P(z_0|x_0^m)
+    b,B = posteriori_matrices(W[0,0],s,S,sm2)
+    grad_mat_b = hessian_posteriori_matrices(W[0,0],s,S,sm2,grad_matS)
+    for j in range(1,W.shape[1]):
+        ###### P(z_{t+dt}|D_t) = N(m,Q))
+        m,Q = new_mean_cov(b,B,F,A,a)
+        grad_mat_Q = hessian_new_mean_cov(b,B,F,A,a,grad_param,grad_mat_b)
+        ##### P(z_{t+dt}|D_{t+dt}) = N(b',B')
+        b,B = posteriori_matrices(W[0,j],m,Q,sm2)
+        grad_mat_b = hessian_posteriori_matrices(W[0,j],m,Q,sm2,grad_mat_Q)
+        ##### Likelihood
+        G,H = hessian_log_likelihood(W[0,j],m,Q,sm2,grad_mat_Q)
+        gll+=G; hll=+H
+    # Predict for daughter cell
+    m,Q = new_mean_cov(b,B,F,A,a)
+    grad_mat_Q = hessian_new_mean_cov(b,B,F,A,a,grad_param,grad_mat_b)
+    # Find next cell initial conditions (9% asym div)
+    s, S, grad_matS = hess_cell_division_likelihood(m,Q,grad_mat_Q,sd2,rescale)
+    return hll, gll, s, S, grad_matS
 def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,\
-                   S,s,dt,grad_matS,rescale,sd2,nparr=False):
+                   S,s,dt,grad_matS,rescale,sd2,\
+                   nparr=False,fun=obj_and_grad_1cc):
     """Compute the ll and gradient for 1 lane"""
     reind = deepcopy(reind_); dat = deepcopy(dat_)
     obj = 0; gobj = 0           # total objective and gradient
@@ -481,7 +517,7 @@ def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,\
             s,S,grad_matS = dat[i][0] # Unpack initial conditions
         # Find ll over 1 cell cycle for 1 daughter
         tmp =\
-        obj_and_grad_1cc(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,grad_matS=grad_matS,rescale=rescale,sd2=sd2) # calculate obj,gobj,p0 for one daugter
+        fun(W=dat[i][1][0],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,grad_matS=grad_matS,rescale=rescale,sd2=sd2) # calculate obj,gobj,p0 for one daugter
         obj += tmp[0]; gobj += tmp[1] #update obj, gobj
     # give the inital condition to the right cell lane
         if np.isnan(reind[i,0]) == False:
@@ -489,7 +525,7 @@ def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,\
     #If the second cell exists do the same
         if np.sum(np.isnan(dat[i][1][1]))==0:
             tmp =\
-            obj_and_grad_1cc(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,grad_matS=grad_matS,rescale=rescale,sd2=sd2)
+            fun(W=dat[i][1][1],mlam=mlam,gamma=gamma,sl2=sl2,sm2=sm2,dt=dt,s=s,S=S,grad_matS=grad_matS,rescale=rescale,sd2=sd2)
             obj += tmp[0]; gobj += tmp[1]
             if np.isnan(reind[i,1]) == False:
                 dat[int(reind[i,1])][0] = tmp[2:]
@@ -499,21 +535,31 @@ def grad_obj_1lane(reind_,dat_,mlam,gamma,sl2,sm2,\
     else:
         return obj, gobj
 def grad_obj_total(mlam,gamma,sl2,sm2,reind_v,\
-                            dat_v,s,S,grad_matS,dt,rescale,sd2,nproc=10):
+                dat_v,s,S,grad_matS,dt,rescale,\
+                   sd2,nproc=10):
     """Apply in parallel on all lane ID"""
     p = Pool(nproc)
     fun = lambda x:\
-        grad_obj_1lane(x[0],x[1],mlam,gamma,sl2,sm2,S,s,dt,grad_matS,rescale,sd2,True)
-    ret = p.map(fun,zip(reind_v,dat_v))
+        grad_obj_1lane(x[0],x[1],mlam,gamma,sl2,sm2,S,s,dt,grad_matS,rescale,sd2,True,obj_and_grad_1cc)
+    ret = map(fun,zip(reind_v,dat_v))
     ret = np.sum(np.vstack(ret),axis=0)
     return ret[0],ret[1:]
-    #-------------------PREDICTIONS OVER CC/LANE AND TOTAL-----------------------------------------
 def grad_obj_wrap(x,in_dic):
     mlam,gamma,sl2,sm2 = x
     reind_v,dat_v,grad_matS,s,S,dt,lane_ID_v,val_v,rescale,sd2 =\
     in_dic['reind_v'],in_dic['dat_v'],in_dic['grad_matS'],in_dic['s'],in_dic['S'],in_dic['dt'],in_dic['lane_ID_v'],in_dic['val_v'],in_dic['rescale'],in_dic['sd2']
     return grad_obj_total(mlam,gamma,sl2,sm2,reind_v,\
                           dat_v,s,S,grad_matS,dt,rescale,sd2,nproc=10)
+def hessian_and_grad_tot(x,in_dic):
+    H = np.zeros((4,4)); G=np.zeros((4,1))
+    mlam,gamma,sl2,sm2 = x
+    reind_v,dat_v,grad_matS,s,S,dt,lane_ID_v,val_v,rescale,sd2 = in_dic['reind_v'],in_dic['dat_v'],in_dic['grad_matS'],in_dic['s'],in_dic['S']\
+                                                               ,in_dic['dt'],in_dic['lane_ID_v'],in_dic['val_v'],in_dic['rescale'],in_dic['sd2']
+    for r,d in zip(reind_v,dat_v):
+        Ht,Gt = grad_obj_1lane(r,d,mlam,gamma,sl2,sm2,S,s,dt,grad_matS,rescale,sd2,False,hessian_1cc)
+        H+=Ht; G+=Gt
+    return H,G
+#-------------------PREDICTIONS OVER CC/LANE AND TOTAL-----------------------------------------
 #-------------------PREDICTIONS-------------------------- 
 def inverse(A): 
     """Inverse a 2x2 matrix"""
@@ -640,8 +686,16 @@ def build_intial_mat(df,leng):
     sm2 = np.var(res)
     ####### They do not depend on the parameters
     mat = np.zeros((2,2)); vec = np.zeros((2,1))
+    #print("Wrong initial cond")
+    #mat = np.ones((2,2)); vec = np.ones((2,1))
     grad_matS = {'m_mlam':vec,'m_gamma':vec,'m_sl2':vec,'m_sm2':vec,\
                  'Q_mlam':mat,'Q_gamma':mat,'Q_sl2':mat,'Q_sm2':mat}
+    for k in ['m','g','s','e']:
+        grad_matS['m_{}'.format(k)]=vec
+        grad_matS['Q_{}'.format(k)]=mat
+        for i in ['m','g','s','e']:
+            grad_matS['m_{}{}'.format(k,i)]=vec
+            grad_matS['Q_{}{}'.format(k,i)]=mat
     s = np.array([[np.mean(x0)],[np.mean(lam)]])
     S = np.array([[np.var(x0),0],[0,np.var(lam)]])
     return s, S, grad_matS,sm2
