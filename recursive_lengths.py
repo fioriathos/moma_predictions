@@ -107,6 +107,7 @@ def hessian_parameters(g,dt,ml,sl2):
     a_gml[1,0] = dt/np.exp(dt*g)
     #Reformat
     ret['A_gg']=A_gg;ret['A_gs']=A_gsl;ret['F_gg']=F_gg;ret['a_gg']=a_gg;ret['a_gm']=a_gml
+    ret['A_sg']=ret['A_gs'];ret['a_mg']=ret['a_gm']
     return ret
 def new_mean_cov(b, B,F,A,a):
     """Start from P(z_t|D_t)= N(b;B) and find P(z_{t+dt}|D_t) =
@@ -173,9 +174,15 @@ def hessian_new_mean_cov(b,B,F,A,a,H_para,H_mat_b):
     for k in ['m','g','s','e']:
         ret['m_{}'.format(k)] = m_k(k)
         ret['Q_{}'.format(k)] = Q_k(k)
+        assert np.allclose(Q_k(k),Q_k(k).T)
         for j in ['m','g','s','e']:
             ret['m_{}{}'.format(k,j)] = m_kj(k,j)
             ret['Q_{}{}'.format(k,j)] = Q_kj(k,j)
+#    for k in ['m','g','s','e']:
+#        for j in ['m','g','s','e']:
+#            assert np.allclose(ret['Q_{}{}'.format(k,j)] ,\
+#                          ret['Q_{}{}'.format(j,k)]),'{}{}{}{}'.format(k,j,ret['Q_{}{}'.format(k,j)],ret['Q_{}{}'.format(j,k)])
+#            assert np.allclose( ret['Q_{}{}'.format(k,j)] ,ret['Q_{}{}'.format(k,j)])
     return ret
 def posteriori_matrices(x,m,Q,sm2):
     """    P(z_{t+dt}|D_{t+dt})=P(x_{t+dt}^m|z_{t+dt})P(z_{t+dt}|D_t)
@@ -424,7 +431,7 @@ def hessian_log_likelihood(xm,m,Q,sm2,H_mat):
        (2.*(Q00 + sm2)**3)
     grad = np.array([G(x) for x in ['m','g','s','e']])[:,None]
     hess = np.array([H(x,y) for y in ['m','g','s','e'] for x in\
-                     ['m','g','s','e']]).reshape((4,4))
+                     ['m','g','s','e']]).reshape(4,4)
     return grad, hess
 def cell_division_likelihood_and_grad(m,Q,grad_mat_Q,sd2,rescale,grad=True):
     S = np.array([[Q[0,0]+sd2,Q[0,1]],[Q[0,1],Q[1,1]]])
@@ -477,6 +484,9 @@ def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,grad_matS,rescale,sd2):
     # Find next cell initial conditions (9% asym div)
     s, S, grad_matS = cell_division_likelihood_and_grad(m,Q,grad_mat_Q,sd2,rescale)
     return -ll, -gll, s, S, grad_matS
+def is_pos_def(x):
+    """Check hessian x positive defined"""
+    return x==x.T and  np.all(np.linalg.eigvals(np.linalg.inv(-x))>0)
 def hessian_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,grad_matS,rescale,sd2):
     """grad and Hessian 1 cell cycle"""
     ##### likelihood and gradient at initial conditions
@@ -541,7 +551,7 @@ def grad_obj_total(mlam,gamma,sl2,sm2,reind_v,\
     p = Pool(nproc)
     fun = lambda x:\
         grad_obj_1lane(x[0],x[1],mlam,gamma,sl2,sm2,S,s,dt,grad_matS,rescale,sd2,True,obj_and_grad_1cc)
-    ret = map(fun,zip(reind_v,dat_v))
+    ret = p.map(fun,zip(reind_v,dat_v))
     ret = np.sum(np.vstack(ret),axis=0)
     return ret[0],ret[1:]
 def grad_obj_wrap(x,in_dic):
@@ -772,8 +782,10 @@ def build_data_strucutre(df,leng,rescale,info=False):
     """Return for every lane the data with respective daughteres and initial conditions"""
     #Sometimes cells with 1 data point are present and we don't want them
     df = df.groupby('cell').filter(lambda x: x.values.shape[0]>1) #
-    dt = np.diff(np.sort(df['time_sec'].unique()))[1]/60
-    assert dt%3==0 and dt != 0., "look if dt make sense"
+    #dt = np.diff(np.sort(df['time_sec'].unique()))[1]/60
+    dt = np.hstack(df.groupby('cell')['time_sec'].apply(lambda x: np.diff(x)/60).values)
+    assert np.sum(dt!=dt[0])==0
+    dt = dt[0]
     #rescae
     df['log_resc_'+leng] = np.log(df['{}'.format(leng)])*rescale
     #print("The variable to use is: log_resc_{}".format(leng))
@@ -839,14 +851,15 @@ def find_best_lengths(files,pwd='/scicore/home/nimwegen/fiori/MoMA_predictions/p
         tmp.append([files,k,err])
     tmp = np.vstack(tmp)
     return tmp[tmp[:,2]==min(tmp[:,2])]
-def denoised_dataset(df,step,nump=3):
+def denoised_dataset(df,step,nump=12):
     """Try to obtain a dataset without noise by sampling every <<step>> """
     # At least nump cell per cell
-    df = df.groupby('cell').filter(lambda x: True if len(x['time_sec'])>nump*step else False)
+    df = df.groupby('cell').filter(lambda x: True if len(x['time_sec'])>nump else False)
     df = df.reset_index()
     ret = []
+    sor = np.sort(df['time_sec'].unique())
     for tau in range(step):
-        tmp = (np.sort(df['time_sec'].unique()[tau:])[::step])
+        tmp = sor[tau:][::step]
         dfsh = pd.concat([df.loc[df['time_sec']==tmp[k]] for k in range(tmp.shape[0])])
         dfsh = dfsh.sort_index().reset_index()
         ret.append(dfsh)
@@ -961,7 +974,20 @@ def syntetic_corr_gen(mlam,gamma,sl2,sm2,dt,cpl=40, lenc = 25, ncel = 20):
     elratsy = dfsy.groupby('cell').apply(lambda x: sleres(x.log_resc_leng))
     corr_long = np.vstack([corr_par(dfsy,elratsy,par_deg=k) for k in ['parent_cell','g_parent_cell','g_g_parent_cell','g_g_g_parent_cell','g_g_g_g_parent_cell'] ])
     return corr_long
-################################################################################################
+def give_unique_dataset(df,step,nump=3):
+    """Denoise the dataset and rebuild step independent out of it! """
+    d3glu = denoised_dataset(df,step,nump)
+    tmp = []
+    k=0 
+    for dtm in d3glu:
+        dtm = dtm.drop(['cell','Unnamed: 0','lane_ID'],axis=1)
+        dtm['date']=dtm['date']+'_{}_'.format(k)
+        dtm['cell'] = dtm['date']+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))+dtm['id'].apply(lambda x: str(x))
+        dtm['lane_ID'] = dtm['date']+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))
+        tmp.append(dtm)
+        k+=1
+    return pd.concat(tmp,ignore_index=True)
+###############################################################################################
 ############################### The stocastics models  #########################################
 ################################################################################################
 def ornstein_uhlenbeck(mlam,gamma,sl2,length=30,ncel=10,dt=3.,dtsim=1):
@@ -978,19 +1004,6 @@ def ornstein_uhlenbeck(mlam,gamma,sl2,length=30,ncel=10,dt=3.,dtsim=1):
     for k in range(1,lengthsim):
         mat[:,k]=mat[:,k-1]-gamma*(mat[:,k-1]-mlam)*dtsim+add[:,k]
     return mat[:,::sam]
-def give_unique_dataset(df,step,nump=3):
-    """Denoise the dataset and rebuild step independent out of it! """
-    d3glu = denoised_dataset(df,step,nump)
-    tmp = []
-    k=0 
-    for dtm in d3glu:
-        dtm = dtm.drop(['cell','Unnamed: 0','lane_ID'],axis=1)
-        dtm['date']=dtm['date']+'_{}_'.format(k)
-        dtm['cell'] = dtm['date']+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))+dtm['id'].apply(lambda x: str(x))
-        dtm['lane_ID'] = dtm['date']+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))
-        tmp.append(dtm)
-        k+=1
-    return pd.concat(tmp,ignore_index=True)
 def integrated_ou(mlam,gamma,sl2,sm2,X0=1,sx0=0.1,length=30,ncel=10,dt=3.,dtsim=1):
     X = ornstein_uhlenbeck(mlam,gamma,sl2,length,ncel,dt,dtsim)
     X0 = np.random.normal(loc=np.ones((ncel,1)),scale=sx0)

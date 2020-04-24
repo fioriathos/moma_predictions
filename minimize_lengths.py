@@ -68,7 +68,7 @@ class minimize_lengths(object):
         """Return total obj and grad depending on the x0 np.array"""
         # From the reduced x0 rebuild entire vector and compute obj and grad
         #ts = time.time()
-        print(x0)
+        #print(x0)
         tmp =\
         self.tot_objective(self.rebuild_param(x0,**self.fixed),in_dic,fun,reg)
         obj = tmp[0]
@@ -85,7 +85,7 @@ class minimize_lengths(object):
         #ts = time.time()
         xn = self.rebuild_param(x0,**self.fixed)
         xn = [xn[0]*1e-02,xn[1]*1e-02,xn[2]*1e-07,xn[3]*1e-04]
-        print(xn)
+        #print(xn)
         tmp =\
         self.tot_objective(xn,in_dic,fun,reg)
         obj = tmp[0]
@@ -181,30 +181,29 @@ class minimize_lengths(object):
         return theta,_
     def err_bar(self,in_dic):
         H,G = rl.hessian_and_grad_tot([self.mlam,self.gamma,self.sl2,self.sm2],in_dic)
+        print("H",H,"G",G)
         errbar = np.sqrt(np.diag(np.linalg.inv(H)))
         return {'gradient':G,'errors':errbar}
     def errorbars(self,in_dic,ret_grad=True):
         """Find errorbars (1std) on the estimated parameters"""
-        from scipy.misc import derivative
         # Take the derivative of the gradient in order to estimate the hessian
         # The objective is already -log_lik so the Covariance is simply the
         # inverse of the Hessian
         sl2 = self.sl2
         sm2 = self.sm2
         mlam = self.mlam
-        func = lambda x:\
-            self.tot_grad_obj(x0=[x,self.gamma,sl2,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
-        d2_ml = derivative(func, mlam, dx=max(1e-11,mlam*1e-08), n=1)
-        func = lambda x:\
-            self.tot_grad_obj(x0=[mlam,x,sl2,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
-        d2_ga = derivative(func, self.gamma, dx=max(1e-11,self.gamma*1e-08), n=1)
-        func = lambda x:\
-            self.tot_grad_obj(x0=[mlam,self.gamma,x,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
-        d2_sl = derivative(func, sl2, dx=max(1e-11,sl2*1e-08), n=1)
-        func = lambda x:\
-            self.tot_grad_obj(x0=[mlam,self.gamma,sl2,x],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
-        d2_sm = derivative(func, sm2, dx=max(1e-11,sm2*1e-08), n=1)
-        H = np.vstack((d2_ml,d2_ga,d2_sl,d2_sm))
+        gamma = self.gamma
+        dm = lambda x:\
+            self.tot_grad_obj(x0=[mlam+x,gamma,sl2,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
+        dg= lambda x:\
+            self.tot_grad_obj(x0=[mlam,gamma+x,sl2,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
+        ds= lambda x:\
+            self.tot_grad_obj(x0=[mlam,gamma,sl2+x,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
+        de = lambda x:\
+            self.tot_grad_obj(x0=[mlam,gamma,sl2,sm2+x],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
+        der =lambda fu,ep: (fu(ep)-fu(-ep))/(2*ep)
+        H = [der(x,1e-13) for x in (dm,dg,ds,de)]
+        H = np.vstack(H)
         errbar = np.sqrt(np.diag(np.linalg.inv(H))/in_dic['n_point'])
         if ret_grad:
             grad =\
