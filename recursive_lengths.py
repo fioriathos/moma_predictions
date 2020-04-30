@@ -680,6 +680,7 @@ def predict(min_dic, in_dic):
 ################################################################################################
 ############################## DATA TREATEMENT #################################################
 ################################################################################################
+
 def build_intial_mat(df,leng):
     """ Build the intiala matrix s,S and intial gradient grad_S """
     # Computation done in minutes (that's why *60)
@@ -980,10 +981,10 @@ def give_unique_dataset(df,step,nump=3):
     tmp = []
     k=0 
     for dtm in d3glu:
-        dtm = dtm.drop(['cell','Unnamed: 0','lane_ID'],axis=1)
-        dtm['date']=dtm['date']+'_{}_'.format(k)
-        dtm['cell'] = dtm['date']+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))+dtm['id'].apply(lambda x: str(x))
-        dtm['lane_ID'] = dtm['date']+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))
+        dtm = dtm.drop(['cell','lane_ID'],axis=1)
+        dtm['date']=dtm['date'].apply(lambda x:str(x))+'_{}_'.format(k)
+        dtm['cell'] = dtm['date'].apply(lambda x:str(x))+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))+dtm['id'].apply(lambda x: str(x))
+        dtm['lane_ID'] = dtm['date'].apply(lambda x:str(x))+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))
         tmp.append(dtm)
         k+=1
     return pd.concat(tmp,ignore_index=True)

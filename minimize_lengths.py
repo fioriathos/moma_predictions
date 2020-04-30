@@ -179,11 +179,11 @@ class minimize_lengths(object):
                 print('objective',_)
             theta = theta-eta*mh/(np.sqrt(sh)+eps)
         return theta,_
-    def err_bar(self,in_dic):
-        H,G = rl.hessian_and_grad_tot([self.mlam,self.gamma,self.sl2,self.sm2],in_dic)
-        print("H",H,"G",G)
-        errbar = np.sqrt(np.diag(np.linalg.inv(H)))
-        return {'gradient':G,'errors':errbar}
+#    def err_bar(self,in_dic):
+#        H,G = rl.hessian_and_grad_tot([self.mlam,self.gamma,self.sl2,self.sm2],in_dic)
+#        print("H",H,"G",G)
+#        errbar = np.sqrt(np.diag(np.linalg.inv(H)))
+#        return {'gradient':G,'errors':errbar}
     def errorbars(self,in_dic,ret_grad=True):
         """Find errorbars (1std) on the estimated parameters"""
         # Take the derivative of the gradient in order to estimate the hessian
