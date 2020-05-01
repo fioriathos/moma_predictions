@@ -19,13 +19,14 @@ class minimize_lengths(object):
         #    self.boundary = [(1e-13,None)]*len(free)
         #Check all keys are either fixed or not
         assert set(fixed.keys())|set((free.keys()))==set(('sm2', 'sl2',\
-                                                          'gamma','mlam'))
+                                                          'gamma','mlam','sd2'))
         # Fix them as model parameters
         def set_att(key,val):
             if key=='gamma':self.gamma=val
             if key=='sl2':self.sl2=val
             if key=='sm2':self.sm2=val
             if key=='mlam':self.mlam=val
+            if key=='sd2':self.sd2=val
         #set attributes
         for key,val in free.items():
             set_att(key,val)
@@ -35,7 +36,7 @@ class minimize_lengths(object):
         """From np.array vec divide in array the non fixed and dict the fix by giving fixed"""
         from collections import OrderedDict
         vecout = {}
-        tmp = OrderedDict([('mlam',vec[0]),('gamma',vec[1]),( 'sl2',vec[2]),( 'sm2',vec[3])])
+        tmp = OrderedDict([('mlam',vec[0]),('gamma',vec[1]),( 'sl2',vec[2]),( 'sm2',vec[3]),( 'sd2',vec[4])])
         for key in kwargs:
             vecout[key]=tmp[key]
             del tmp[key]
@@ -43,7 +44,7 @@ class minimize_lengths(object):
     def rebuild_param(self,vec,**kwargs):
         """ Inverse operation than fix_par"""
         from collections import OrderedDict
-        tmp = OrderedDict([( 'mlam',None),('gamma',None),( 'sl2',None),( 'sm2',None)])
+        tmp = OrderedDict([( 'mlam',None),('gamma',None),( 'sl2',None),( 'sm2',None),( 'sd2',None)])
         for key,val in kwargs.items():
             assert val!=None, "Can't have None as fixed values"
             tmp[key]=val
@@ -68,7 +69,6 @@ class minimize_lengths(object):
         """Return total obj and grad depending on the x0 np.array"""
         # From the reduced x0 rebuild entire vector and compute obj and grad
         #ts = time.time()
-        #print(x0)
         tmp =\
         self.tot_objective(self.rebuild_param(x0,**self.fixed),in_dic,fun,reg)
         obj = tmp[0]
@@ -98,12 +98,13 @@ class minimize_lengths(object):
         return obj,grad.reshape(-1)
     def initialize(self):
         """Return the x np array"""
-        x0 = [None]*4
+        x0 = [None]*5
         for i in self.free:
             if i=='mlam':x0[0]=self.free[i]
             if i=='gamma':x0[1]=self.free[i]
             if i=='sl2':x0[2]=self.free[i]
             if i=='sm2':x0[3]=self.free[i]
+            if i=='sd2':x0[4]=self.free[i]
         x0 = [x for x in x0 if x is not None]
         return np.array(x0)
     def minimize_both_vers(self,in_dic,x0=None,numerical=False,fun=rl.grad_obj_wrap,reg=None,pgtol=1e-08):
@@ -139,12 +140,14 @@ class minimize_lengths(object):
                             'gamma':total_par[1],\
                             'sl2':total_par[2],\
                             'sm2':total_par[3],\
+                            'sd2':total_par[4],\
                             }
         if tmp['warnflag']==True or tmp['warnflag']==0:
             self.mlam = total_par[0]
             self.gamma = total_par[1]
             self.sl2= total_par[2]
             self.sm2= total_par[3]
+            self.sd2= total_par[4]
         return ret
     def correct_scaling(self,in_dic):
         res = in_dic['rescale']
@@ -193,26 +196,29 @@ class minimize_lengths(object):
         sm2 = self.sm2
         mlam = self.mlam
         gamma = self.gamma
+        sd2 = self.sd2
         dm = lambda x:\
-            self.tot_grad_obj(x0=[mlam+x,gamma,sl2,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
+            self.tot_grad_obj(x0=[mlam+x,gamma,sl2,sm2,sd2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
         dg= lambda x:\
-            self.tot_grad_obj(x0=[mlam,gamma+x,sl2,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
+            self.tot_grad_obj(x0=[mlam,gamma+x,sl2,sm2,sd2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
         ds= lambda x:\
-            self.tot_grad_obj(x0=[mlam,gamma,sl2+x,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
+            self.tot_grad_obj(x0=[mlam,gamma,sl2+x,sm2,sd2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
         de = lambda x:\
-            self.tot_grad_obj(x0=[mlam,gamma,sl2,sm2+x],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
+            self.tot_grad_obj(x0=[mlam,gamma,sl2,sm2+x,sd2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
+        da = lambda x:\
+            self.tot_grad_obj(x0=[mlam,gamma,sl2,sm2,sd2+x],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
         der =lambda fu,ep: (fu(ep)-fu(-ep))/(2*ep)
-        H = [der(x,1e-13) for x in (dm,dg,ds,de)]
+        H = [der(x,1e-13) for x in (dm,dg,ds,de,da)]
         H = np.vstack(H)
         errbar = np.sqrt(np.diag(np.linalg.inv(H))/in_dic['n_point'])
         if ret_grad:
             grad =\
-            self.tot_grad_obj(x0=[mlam,self.gamma,sl2,sm2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]*in_dic['n_point']
+            self.tot_grad_obj(x0=[mlam,self.gamma,sl2,sm2,sd2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]*in_dic['n_point']
             return {'error':\
                     {'mlam':errbar[0],'gamma':errbar[1],\
-                     'sl2':errbar[2],'sm2':errbar[3]},\
-                    'grad':(grad[0],grad[1],grad[2],grad[3]),\
-                    'param':{'mlam':mlam,'gamma':self.gamma,'sl2':sl2,'sm2':sm2}}
+                     'sl2':errbar[2],'sm2':errbar[3],'sd2':errbar[4]},\
+                    'grad':(grad[0],grad[1],grad[2],grad[3],grad[4]),\
+                    'param':{'mlam':mlam,'gamma':self.gamma,'sl2':sl2,'sm2':sm2,'sd2':sd2}}
         else:
             return {'mlam':errbar[0],'gamma':errbar[1],\
                      'sl2':errbar[2],'sm2':errbar[3]}

@@ -127,6 +127,7 @@ def grad_new_mean_cov(b,B,F,A,a,grad_para,grad_mat_b):
     m_gamma = grad_para['a_gamma'] + fdgm('b_gamma')+np.dot(F_gamma,b)
     m_sl2 = fdgm('b_sl2')
     m_sm2 = fdgm('b_sm2')
+    m_sd2 = fdgm('b_sd2')
     #######################################################
     # Grad Q grad_mat['
     ######################################################
@@ -137,8 +138,10 @@ def grad_new_mean_cov(b,B,F,A,a,grad_para,grad_mat_b):
               + np.dot(F,np.dot(B,F_gamma.T))
     Q_sl2 = grad_para['A_sl2'] + fdgf('B_sl2')
     Q_sm2 = fdgf('B_sm2')
+    Q_sd2 = fdgf('B_sd2')
     return {'m_mlam':m_mlam,'m_gamma':m_gamma,'m_sl2':m_sl2,'m_sm2':m_sm2,\
-            'Q_mlam':Q_mlam,'Q_gamma':Q_gamma,'Q_sl2':Q_sl2,'Q_sm2':Q_sm2}
+            'Q_mlam':Q_mlam,'Q_gamma':Q_gamma,'Q_sl2':Q_sl2,'Q_sm2':Q_sm2,\
+            'm_sd2':m_sd2,'Q_sd2':Q_sd2}
 def hessian_new_mean_cov(b,B,F,A,a,H_para,H_mat_b):
     """Hessian and gradient of m and Q """
     trmul = lambda x,y,z: np.dot(x,np.dot(y,z.T))
@@ -230,7 +233,7 @@ def grad_posteriori_matrices(x,m,Q,sm2,grad_mat):
         return b_d
     b_sm2 = db('m_sm2','Q_sm2',1) + np.array([[m[0,0]/den],[0]])
     return {'B_gamma':dB('Q_gamma'),'B_mlam':dB('Q_mlam'),'B_sl2':dB('Q_sl2'),\
-            'B_sm2':B_sm2,'b_sm2':b_sm2,\
+            'B_sd2':dB('Q_sd2'),'b_sd2':db('m_sd2','Q_sd2'),'B_sm2':B_sm2,'b_sm2':b_sm2,\
             'b_gamma':db('m_gamma','Q_gamma'),'b_mlam':db('m_mlam','Q_mlam'),'b_sl2':db('m_sl2','Q_sl2')}
 def hessian_posteriori_matrices(xm,m,Q,sm2,H_mat):
     """Return the gradient and the hessian of the posteriori matrices b and B. xm is the datapoint"""
@@ -401,7 +404,10 @@ def grad_log_likelihood(x,m,Q,sm2,grad_mat):
     return  np.array([[grad('m_mlam','Q_mlam')],\
                     [grad('m_gamma','Q_gamma')],\
                     [grad('m_sl2','Q_sl2')],\
-                    [grad('m_sm2','Q_sm2',1)]])
+                    [grad('m_sm2','Q_sm2',1)],\
+                    [grad('m_sd2','Q_sd2')],\
+                     ])
+
 def hessian_log_likelihood(xm,m,Q,sm2,H_mat):
     """Give gradient and hessian of log lik"""
     def G(x):
@@ -434,9 +440,12 @@ def hessian_log_likelihood(xm,m,Q,sm2,H_mat):
                      ['m','g','s','e']]).reshape(4,4)
     return grad, hess
 def cell_division_likelihood_and_grad(m,Q,grad_mat_Q,sd2,rescale,grad=True):
+    grad_matS = {}
     S = np.array([[Q[0,0]+sd2,Q[0,1]],[Q[0,1],Q[1,1]]])
     s = np.array([[m[0,0]-rescale*np.log(2)],[m[1,0]]])
-    grad_matS = {}
+    grad_matS['Q_sd2'] =\
+        np.array([[1,0],[0,0]])
+    grad_matS['m_sd2'] =np.array([[0],[0]])
     def gm(x):
         GQ = grad_mat_Q['{}'.format(x)]
         grad_matS['{}'.format(x)] = \
@@ -555,9 +564,9 @@ def grad_obj_total(mlam,gamma,sl2,sm2,reind_v,\
     ret = np.sum(np.vstack(ret),axis=0)
     return ret[0],ret[1:]
 def grad_obj_wrap(x,in_dic):
-    mlam,gamma,sl2,sm2 = x
-    reind_v,dat_v,grad_matS,s,S,dt,lane_ID_v,val_v,rescale,sd2 =\
-    in_dic['reind_v'],in_dic['dat_v'],in_dic['grad_matS'],in_dic['s'],in_dic['S'],in_dic['dt'],in_dic['lane_ID_v'],in_dic['val_v'],in_dic['rescale'],in_dic['sd2']
+    mlam,gamma,sl2,sm2,sd2 = x
+    reind_v,dat_v,grad_matS,s,S,dt,lane_ID_v,val_v,rescale=\
+    in_dic['reind_v'],in_dic['dat_v'],in_dic['grad_matS'],in_dic['s'],in_dic['S'],in_dic['dt'],in_dic['lane_ID_v'],in_dic['val_v'],in_dic['rescale']
     return grad_obj_total(mlam,gamma,sl2,sm2,reind_v,\
                           dat_v,s,S,grad_matS,dt,rescale,sd2,nproc=10)
 def hessian_and_grad_tot(x,in_dic):
@@ -700,7 +709,8 @@ def build_intial_mat(df,leng):
     #print("Wrong initial cond")
     #mat = np.ones((2,2)); vec = np.ones((2,1))
     grad_matS = {'m_mlam':vec,'m_gamma':vec,'m_sl2':vec,'m_sm2':vec,\
-                 'Q_mlam':mat,'Q_gamma':mat,'Q_sl2':mat,'Q_sm2':mat}
+                 'Q_mlam':mat,'Q_gamma':mat,'Q_sl2':mat,'Q_sm2':mat,\
+                 'Q_sd2':mat,'m_sd2':vec}
     for k in ['m','g','s','e']:
         grad_matS['m_{}'.format(k)]=vec
         grad_matS['Q_{}'.format(k)]=mat
@@ -779,6 +789,25 @@ def asym_dist(reind_v,dat_v,dt,rescale):
     flat = lambda dist: np.array([j for k in dist for j in k]) 
     return flat(distx0),flat(distlam), flat(distk0)
 #
+def asym_div(dat_v,rescale):
+    """Predict the amount of asymmetric division by considering the 2 daughter must sum up to the total"""
+    from scipy.stats import linregress
+    lg = lambda x: linregress(range(len(x.reshape(-1))),x.reshape(-1)).intercept
+    flat = lambda x: np.array([g for m in x for g in m ])
+    sxd2 =[]; sgd2 = []
+    for j in dat_v:
+        for k in j:
+            if type(k[1][1])==float and (np.isnan(k[1][1])): 
+                continue
+            else:
+                # Predict the length and gfp at begin
+                x1 = k[1][0]
+                x2 = k[1][1]
+                x1,x2 = [lg(x) for x in [x1,x2]]
+                perfx = (x1+x2)-rescale*np.log(2) # perfect division
+                sxd2.append((perfx-x1,perfx-x2))
+    return np.var(flat(sxd2))
+
 def build_data_strucutre(df,leng,rescale,info=False):
     """Return for every lane the data with respective daughteres and initial conditions"""
     #Sometimes cells with 1 data point are present and we don't want them
@@ -855,7 +884,7 @@ def find_best_lengths(files,pwd='/scicore/home/nimwegen/fiori/MoMA_predictions/p
 def denoised_dataset(df,step,nump=12):
     """Try to obtain a dataset without noise by sampling every <<step>> """
     # At least nump cell per cell
-    df = df.groupby('cell').filter(lambda x: True if len(x['time_sec'])>nump else False)
+    df = df.groupby('cell').filter(lambda x: True if len(x['time_sec'])>=nump else False)
     df = df.reset_index()
     ret = []
     sor = np.sort(df['time_sec'].unique())
