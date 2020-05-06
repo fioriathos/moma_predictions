@@ -742,54 +742,54 @@ def who_goes_where(val):
     tmp1 = np.vstack(list(map(fun,tmp1)))
     tmp2 = np.vstack(list(map(fun,tmp2)))
     return np.hstack([tmp1,tmp2])
-#
-def asym_dist_1lane(reind_,dat_,dt,rescale):
-    """Find the asymmetric distribution in log space for one lane"""
-    from copy import deepcopy
-    reind = deepcopy(reind_); dat = deepcopy(dat_)
-    distx0 = []; distlam = []; distk0 = []           # total objective and gradient
-    def pred_moth(i,j):
-        """Predict division length and growth rate. Do same for inital one"""
-        # Linear fit one cell cycle to estimate length mother and lenght daughter
-        W=dat[i][1][j].reshape(-1)
-        t = np.arange(0,dt*len(W),dt)
-        tmp = linregress(t,W)
-        tmp1 = linregress(t[:4],W[:4])
-        tmp2 = linregress(t[:4],W[-4:])
-        if np.isnan(reind[i,j]) == False:
-            # predict cell lenght at division and el_rat
-            foo = np.append(t,t[-1]+dt/2)*tmp.slope+tmp.intercept
-            dat[int(reind[i,j])][0] = {'ml':foo[-1],'mlam':tmp2.slope}
-        return tmp.intercept, tmp1.slope #x0 and lambda
-    ## APPLY
-    for i in range(len(dat)):
-        # If cell doesn't have mother just predict length of daugther and save them
-        if type(dat[i][0])!=dict:
-            pred_moth(i,0);
-            if np.sum(np.isnan(dat[i][1][1]))==0:
-                pred_moth(i,1)
-        # If it does has a mother predict its length and save the log  difference betwee half of mother cell and daugther one
-        else:
-            x0,lam = pred_moth(i,0)
-            distx0.append(dat[i][0]['ml']-rescale*np.log(2)-x0)
-            distlam.append(dat[i][0]['mlam']-lam)
-            distk0.append([x0,lam])
-            if np.sum(np.isnan(dat[i][1][1]))==0:
-                x0,lam = pred_moth(i,1)
-                distx0.append(dat[i][0]['ml']-rescale*np.log(2)-x0)
-                distlam.append(dat[i][0]['mlam']-lam)
-                distk0.append([x0,lam])
-    return distx0, distlam, distk0
-def asym_dist(reind_v,dat_v,dt,rescale):
-    """Return distribution of difference between predictd half size and actual cell division (distx0); differene in growth rates between mother and daugheter (distlam); and initial condition (x,lam) distk0 """
-    distx0 = []; distlam = []; distk0 =[] 
-    for i,j in enumerate(dat_v):
-        dx0 , dlam, dk0 = asym_dist_1lane(reind_v[i],dat_v[i],dt,rescale)
-        distx0.append(dx0); distlam.append(dlam); distk0.append(dk0)
-    flat = lambda dist: np.array([j for k in dist for j in k]) 
-    return flat(distx0),flat(distlam), flat(distk0)
-#
-def asym_div(dat_v,rescale):
+##
+#def asym_dist_1lane(reind_,dat_,dt,rescale):
+#    """Find the asymmetric distribution in log space for one lane"""
+#    from copy import deepcopy
+#    reind = deepcopy(reind_); dat = deepcopy(dat_)
+#    distx0 = []; distlam = []; distk0 = []           # total objective and gradient
+#    def pred_moth(i,j):
+#        """Predict division length and growth rate. Do same for inital one"""
+#        # Linear fit one cell cycle to estimate length mother and lenght daughter
+#        W=dat[i][1][j].reshape(-1)
+#        t = np.arange(0,dt*len(W),dt)
+#        tmp = linregress(t,W)
+#        tmp1 = linregress(t[:4],W[:4])
+#        tmp2 = linregress(t[:4],W[-4:])
+#        if np.isnan(reind[i,j]) == False:
+#            # predict cell lenght at division and el_rat
+#            foo = np.append(t,t[-1]+dt/2)*tmp.slope+tmp.intercept
+#            dat[int(reind[i,j])][0] = {'ml':foo[-1],'mlam':tmp2.slope}
+#        return tmp.intercept, tmp1.slope #x0 and lambda
+#    ## APPLY
+#    for i in range(len(dat)):
+#        # If cell doesn't have mother just predict length of daugther and save them
+#        if type(dat[i][0])!=dict:
+#            pred_moth(i,0);
+#            if np.sum(np.isnan(dat[i][1][1]))==0:
+#                pred_moth(i,1)
+#        # If it does has a mother predict its length and save the log  difference betwee half of mother cell and daugther one
+#        else:
+#            x0,lam = pred_moth(i,0)
+#            distx0.append(dat[i][0]['ml']-rescale*np.log(2)-x0)
+#            distlam.append(dat[i][0]['mlam']-lam)
+#            distk0.append([x0,lam])
+#            if np.sum(np.isnan(dat[i][1][1]))==0:
+#                x0,lam = pred_moth(i,1)
+#                distx0.append(dat[i][0]['ml']-rescale*np.log(2)-x0)
+#                distlam.append(dat[i][0]['mlam']-lam)
+#                distk0.append([x0,lam])
+#    return distx0, distlam, distk0
+#def asym_dist_(reind_v,dat_v,dt,rescale):
+#    """Return distribution of difference between predictd half size and actual cell division (distx0); differene in growth rates between mother and daugheter (distlam); and initial condition (x,lam) distk0 """
+#    distx0 = []; distlam = []; distk0 =[] 
+#    for i,j in enumerate(dat_v):
+#        dx0 , dlam, dk0 = asym_dist_1lane(reind_v[i],dat_v[i],dt,rescale)
+#        distx0.append(dx0); distlam.append(dlam); distk0.append(dk0)
+#    flat = lambda dist: np.array([j for k in dist for j in k]) 
+#    return flat(distx0),flat(distlam), flat(distk0)
+##
+def asym_dist(_,dat_v,__,rescale):
     """Predict the amount of asymmetric division by considering the 2 daughter must sum up to the total"""
     from scipy.stats import linregress
     lg = lambda x: linregress(range(len(x.reshape(-1))),x.reshape(-1)).intercept
@@ -804,9 +804,9 @@ def asym_div(dat_v,rescale):
                 x1 = k[1][0]
                 x2 = k[1][1]
                 x1,x2 = [lg(x) for x in [x1,x2]]
-                perfx = (x1+x2)-rescale*np.log(2) # perfect division
+                perfx = np.log((np.exp(x1)+np.exp(x2)))-rescale*np.log(2) # perfect division
                 sxd2.append((perfx-x1,perfx-x2))
-    return np.var(flat(sxd2))
+    return flat(sxd2),_,_
 
 def build_data_strucutre(df,leng,rescale,info=False):
     """Return for every lane the data with respective daughteres and initial conditions"""
@@ -842,9 +842,7 @@ def build_data_strucutre(df,leng,rescale,info=False):
                 else:
                     vec_dat_v.append(j[1][1])
     vec_dat_v = np.hstack(vec_dat_v).T
-    if info:
-        print("To estimate sd2 call asym_dist! Otherwise is set to cv 0.1")
-    sd2, _, _ = asym_dist(reind_v,dat_v,dt=dt,rescale=rescale)
+    sd2, _, _ = asym_dist(reind_v,dat_v,dt,rescale)
     #asym division equal to 0.1 cv(0.1*rescale*np.log(2))**2
     return df,{'n_point':n_point,'dt':dt,'s':s,'S':S,'grad_matS':grad_matS,\
             'reind_v':reind_v,'dat_v':dat_v, 'val_v':val_v,\
@@ -897,26 +895,11 @@ def denoised_dataset(df,step,nump=12):
 ################################################################################################
 ############################### ADDITIONAL FUNCTIONS FOR ANALYSIS  #############################
 ################################################################################################
-def connect_and_filt_df(files,dt,pwd='/scicore/home/nimwegen/rocasu25/Documents/Projects/biozentrum/MoM_constitExpr/20190612_forAthos/'):
+def give_good_structure(df):
     """Connect all pandas in files.txt togetehr"""
-    def sleres(y,dt=dt):
-        """Return slope (lambda), intercept (x0) and residuals (form sm2)"""
-        t = np.arange(0,len(y)*dt,dt)
-        r = linregress(t,y)
-        return r.rvalue
-    tmp = []
-    for j in files:
-        dtm = pd.read_csv(pwd+j+'/'+j+'.csv')
-        dtm['date'] = j
-        dtm['cell'] = dtm['date']+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))+dtm['id'].apply(lambda x: str(x))
-        dtm['lane_ID'] = dtm['date']+dtm['pos'].apply(lambda x: str(x))+dtm['gl'].apply(lambda x: str(x))
-        tmp.append(dtm)
-    df = pd.concat(tmp)
-    assert np.sum(df['discard_top'])==0
-    assert np.sum(np.sum(df['end_type']!='div'))==0
-    df = df.groupby('cell').filter(lambda x: len(x['time_sec'])>2)
-    df = df.groupby('cell').filter(lambda x:\
-                                   sleres(np.log(x.length_um))>0.98)
+    df['date'] = df['date'].apply(lambda x: str(x))
+    df['cell'] = df['date']+df['pos'].apply(lambda x: str(x))+df['gl'].apply(lambda x: str(x))+df['id'].apply(lambda x: str(x))
+    df['lane_ID'] = df['date']+df['pos'].apply(lambda x: str(x))+df['gl'].apply(lambda x: str(x))
     return df
 def genalogy(df,gen_deg='parent_cell'):
     """find one geanolgy upper"""
@@ -931,7 +914,7 @@ def genalogy(df,gen_deg='parent_cell'):
             df.loc[df['cell']==k,'g_'+'{}'.format(gen_deg)] = 'nan'
     return df
 def corr_par(df,elrat,par_deg='parent_cell'):
-    """find correlation parameters """
+    """find correlation parameters, return corrcoef and number of points  """
     ret=[]
     for k in df.cell.unique():
         try:
@@ -942,50 +925,47 @@ def corr_par(df,elrat,par_deg='parent_cell'):
             continue
     tmp = np.array(ret)
     return np.corrcoef(tmp[:,:1].reshape(-1),tmp[:,1:].reshape(-1))[0,1], tmp.shape[0]
-def long_corr_in_data(df,dt):
+def long_corr_in_data(df,leng,ngen):
     """Find corr over generations in dataframes"""
-    def sleres(y,dt=dt):
-        """Return slope (lambda), intercept (x0) and residuals (form sm2)"""
-        t = np.arange(0,dt*len(y),dt) 
-        r = linregress(t,y)
-        return r.slope
-    df = genalogy(df,'parent_cell')
-    df = genalogy(df,'g_parent_cell')
-    df = genalogy(df,'g_g_parent_cell')
-    df = genalogy(df,'g_g_g_parent_cell') 
-    elrat = df.groupby('cell').apply(lambda x: sleres(np.log(x.length_um)))
-    return np.vstack([corr_par(df,elrat,par_deg=k) for k in ['parent_cell','g_parent_cell','g_g_parent_cell','g_g_g_parent_cell','g_g_g_g_parent_cell'] ])    
-def smilar_frame(W,cvd=0):
-    """From  OU create a dataframe with same shape as biological data (divison at twice the size).. Consider also asymmetric division """
-    explen = []; lane_ID=[]; parent_ID=[]; id_n=[-1]; time_sec=[]; df=[]
-    W = deepcopy(W); 
-    for i in range(W.shape[0]):
-        tmp = [W[i,0]]
-        fix = W[i,0]
-        ts=[0]
-        for k in range(1,W.shape[1]-1):
-            #if tmp[-1] < tmp[0]+np.log(2):
-            #Do the choice stocastically otherwise we accumulate always some lengths
-            #print([W[i,k]< tmp[0]+np.log(2),W[i,k+1]< tmp[0]+np.log(2)])
-            div = np.random.normal(np.log(2),np.log(2)*cvd)
-            if np.random.choice([W[i,k]< fix+div,W[i,k+1]< fix+div],1,p=[0.5,0.5])[0]:
-                tmp.append(W[i,k])
-                ts.append(ts[-1]+180)
-            else:
-                lane_ID = ['lane_num_{}'.format(i)]*int(len(tmp))
-                parent_ID = ['{}'.format(id_n[-1])]*int(len(tmp))
-                id_n = ['{}'.format(k)]*int(len(tmp))
-                explen= np.exp(tmp)
-                time_sec = ts
-                ts=[ts[-1]]         
-                tmp = [tmp[-1]-div]
-                W[i,:] = W[i,:]-div
-                #print(len(explen))
-                #print(len(lane_ID))
-                df.append(pd.DataFrame({'leng':explen,'lane_ID':lane_ID,'parent_id':parent_ID, 'id':id_n,'time_sec':time_sec}))
-    df = pd.concat(df,ignore_index=True)
-    df['cell'] = df['lane_ID']+'_'+df['id']
-    return df
+    pre=['']
+    for k in range(ngen-1):
+        df = genalogy(df,'{}parent_cell'.format(pre[-1]))
+        pre.append(pre[-1]+'g_')
+    elrat = df.groupby('cell').apply(lambda x:\
+                                     linregress(x['time_sec'],np.log(x['{}'.format(leng)])).slope)
+    pre = [k+'parent_cell' for k in pre]
+    return np.vstack([corr_par(df,elrat,par_deg=k) for k in pre]),elrat.std()/elrat.mean()
+#def smilar_frame(W,cvd=0):
+#    """From  OU create a dataframe with same shape as biological data (divison at twice the size).. Consider also asymmetric division """
+#    explen = []; lane_ID=[]; parent_ID=[]; id_n=[-1]; time_sec=[]; df=[]
+#    W = deepcopy(W); 
+#    for i in range(W.shape[0]):
+#        tmp = [W[i,0]]
+#        fix = W[i,0]
+#        ts=[0]
+#        for k in range(1,W.shape[1]-1):
+#            #if tmp[-1] < tmp[0]+np.log(2):
+#            #Do the choice stocastically otherwise we accumulate always some lengths
+#            #print([W[i,k]< tmp[0]+np.log(2),W[i,k+1]< tmp[0]+np.log(2)])
+#            div = np.random.normal(np.log(2),np.log(2)*cvd)
+#            if np.random.choice([W[i,k]< fix+div,W[i,k+1]< fix+div],1,p=[0.5,0.5])[0]:
+#                tmp.append(W[i,k])
+#                ts.append(ts[-1]+180)
+#            else:
+#                lane_ID = ['lane_num_{}'.format(i)]*int(len(tmp))
+#                parent_ID = ['{}'.format(id_n[-1])]*int(len(tmp))
+#                id_n = ['{}'.format(k)]*int(len(tmp))
+#                explen= np.exp(tmp)
+#                time_sec = ts
+#                ts=[ts[-1]]         
+#                tmp = [tmp[-1]-div]
+#                W[i,:] = W[i,:]-div
+#                #print(len(explen))
+#                #print(len(lane_ID))
+#                df.append(pd.DataFrame({'leng':explen,'lane_ID':lane_ID,'parent_id':parent_ID, 'id':id_n,'time_sec':time_sec}))
+#    df = pd.concat(df,ignore_index=True)
+#    df['cell'] = df['lane_ID']+'_'+df['id']
+#    return df
 def syntetic_corr_gen(mlam,gamma,sl2,sm2,dt,cpl=40, lenc = 25, ncel = 20):
     def sleres(y,dt=dt):
         """Return slope (lambda), intercept (x0) and residuals (form sm2)"""
@@ -1020,32 +1000,87 @@ def give_unique_dataset(df,step,nump=3):
 ###############################################################################################
 ############################### The stocastics models  #########################################
 ################################################################################################
-def ornstein_uhlenbeck(mlam,gamma,sl2,length=30,ncel=10,dt=3.,dtsim=1):
-    sam = dt/dtsim
-    lengthsim = length*sam
-    assert (sam).is_integer(), "not sam integer"
-    assert (lengthsim).is_integer(), "no lan integer"
-    sam = int(sam); lengthsim=int(lengthsim)
-    mat = np.zeros((ncel,lengthsim))
+def ornstein_uhlenbeck(mlam,gamma,sl2,shape=(1,1000),dtsim=1):
+    "Create ou model of shape (#ncel,#length_cell) with sampling dtsim"
+    mat = np.zeros(shape)
     sig = np.sqrt(sl2)
     dW = np.random.normal(loc=mat,scale=np.sqrt(dtsim))
     add = sig*dW*dtsim
     mat[:,0]=add[:,0]+mlam
-    for k in range(1,lengthsim):
+    for k in range(1,shape[1]):
         mat[:,k]=mat[:,k-1]-gamma*(mat[:,k-1]-mlam)*dtsim+add[:,k]
-    return mat[:,::sam]
-def integrated_ou(mlam,gamma,sl2,sm2,X0=1,sx0=0.1,length=30,ncel=10,dt=3.,dtsim=1):
-    X = ornstein_uhlenbeck(mlam,gamma,sl2,length,ncel,dt,dtsim)
-    X0 = np.random.normal(loc=np.ones((ncel,1)),scale=sx0)
-    return np.random.normal(loc=np.hstack([X0,np.cumsum(X,axis=1)*dt+X0]),scale=np.sqrt(sm2))[:,:-1], X
-def W_er(st): 
-    diffW= abs(W-z[0,:])
-    percW = sum(sum(diffW>st*err_z[0,:]))/diffW.shape[1]
-    return percW
-def X_er(st):
-    diffX= abs(X-z[1,:])
-    percX = sum(sum(diffX>st*err_z[1,:]))/diffX.shape[1]
-    return percX
+    return mat
+
+def adder(V0,W,DV,prin=False,dt_sim=1):
+    """V0 initial volume DV added volume (equal to V0 in stationary) W OU process"""
+    #assert W.shape[0]==1
+    W = W.reshape(-1)
+    x0=V0
+    integ = []
+    j=0
+    while True:
+        W = np.insert(W,0,0)
+        try:
+            #Find first index which fulfill condition
+            exp = x0*np.exp(np.cumsum(W*dt_sim))
+            ind = np.where(exp-x0<DV)[0][-1]+1
+            if W.shape[0]==1:break
+        except IndexError:
+            break
+        #Randomly choose if take first smaller or first larger which statistfy cond
+        ind += np.random.choice([0,1])
+        integ.append(exp[:ind])
+        W= W[ind:]
+        x0=integ[-1][-1]/2
+    #return integ
+    #to_print = np.array([k[-1] for k in integ])
+    #if prin: print('added length:',np.mean(to_print),'+/-',np.std(to_print)/np.sqrt(len(to_print)))
+    return integ[:-1]
+
+def smilar_frame(mlam,gamma,sl2,sm2,V0,DV,shape=(1,1000),dtsim=1,prin=False):
+    """From  OU create a dataframe with same shape as biological data (divison at twice the size).. Consider also asymmetric division """
+    explen = []; lane_ID=[]; parent_ID=[]; id_n=[-1]; time_sec=[]; df=[]
+    W = ornstein_uhlenbeck(mlam,gamma,sl2,shape,dtsim) # create elongation rate dynamics
+    V = np.zeros_like(W)
+    V[:,0] = V0
+    for i in range(W.shape[0]):
+        X = adder(V0,W[i,:],DV,prin,dtsim)
+        for j,k in enumerate(X):
+            lane_ID = ['{}'.format(i)]*int(len(k))
+            parent_ID = ['{}'.format(id_n[-1])]*int(len(k))
+            id_n = ['{}'.format(j)]*int(len(k))
+            explen= np.exp(np.random.normal(np.log(k),np.sqrt(sm2)))
+            df.append(pd.DataFrame({'leng':explen,'lane_ID':lane_ID,'parent_id':parent_ID, 'id':id_n}))
+    df = pd.concat(df,ignore_index=True)
+    df['time_sec'] = np.arange(0,df.shape[0]*dtsim,dtsim)*60
+    df['cell'] = df['lane_ID']+df['id']
+    return df
+#def ornstein_uhlenbeck(mlam,gamma,sl2,length=30,ncel=10,dt=3.,dtsim=1):
+#    sam = dt/dtsim
+#    lengthsim = length*sam
+#    assert (sam).is_integer(), "not sam integer"
+#    assert (lengthsim).is_integer(), "no lan integer"
+#    sam = int(sam); lengthsim=int(lengthsim)
+#    mat = np.zeros((ncel,lengthsim))
+#    sig = np.sqrt(sl2)
+#    dW = np.random.normal(loc=mat,scale=np.sqrt(dtsim))
+#    add = sig*dW*dtsim
+#    mat[:,0]=add[:,0]+mlam
+#    for k in range(1,lengthsim):
+#        mat[:,k]=mat[:,k-1]-gamma*(mat[:,k-1]-mlam)*dtsim+add[:,k]
+#    return mat[:,::sam]
+#def integrated_ou(mlam,gamma,sl2,sm2,X0=1,sx0=0.1,length=30,ncel=10,dt=3.,dtsim=1):
+#    X = ornstein_uhlenbeck(mlam,gamma,sl2,length,ncel,dt,dtsim)
+#    X0 = np.random.normal(loc=np.ones((ncel,1)),scale=sx0)
+#    return np.random.normal(loc=np.hstack([X0,np.cumsum(X,axis=1)*dt+X0]),scale=np.sqrt(sm2))[:,:-1], X
+#def W_er(st): 
+#    diffW= abs(W-z[0,:])
+#    percW = sum(sum(diffW>st*err_z[0,:]))/diffW.shape[1]
+#    return percW
+#def X_er(st):
+#    diffX= abs(X-z[1,:])
+#    percX = sum(sum(diffX>st*err_z[1,:]))/diffX.shape[1]
+#    return percX
 if  __name__=="__main__":
     import time
     np.random.seed(1)
