@@ -209,20 +209,9 @@ class minimize_lengths(object):
             self.tot_grad_obj(x0=[mlam,gamma,sl2,sm2,sd2+x],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]
         der =lambda fu,ep: (fu(ep)-fu(-ep))/(2*ep)
         H = [der(x,1e-13) for x in (dm,dg,ds,de,da)]
-        H = np.vstack(H)
+        H = self.fix_par(H, **self.fixed)[0]
         errbar = np.sqrt(np.diag(np.linalg.inv(H))/in_dic['n_point'])
-        if ret_grad:
-            grad =\
-            self.tot_grad_obj(x0=[mlam,self.gamma,sl2,sm2,sd2],in_dic=in_dic,fun=rl.grad_obj_wrap,reg=None)[1]*in_dic['n_point']
-            return {'error':\
-                    {'mlam':errbar[0],'gamma':errbar[1],\
-                     'sl2':errbar[2],'sm2':errbar[3],'sd2':errbar[4]},\
-                    'grad':(grad[0],grad[1],grad[2],grad[3],grad[4]),\
-                    'param':{'mlam':mlam,'gamma':self.gamma,'sl2':sl2,'sm2':sm2,'sd2':sd2}}
-        else:
-            return {'mlam':errbar[0],'gamma':errbar[1],\
-                     'sl2':errbar[2],'sm2':errbar[3]}
-        return tmp,total_par,lik_grad
+        return {'param':np.array([mlam,gamma,sl2,sm2,sd2]),'grad':dm(0)*in_dic['n_point'],'error':errbar}
 
 #    @jit
 #    def row_slice(self, xt, nproc):
