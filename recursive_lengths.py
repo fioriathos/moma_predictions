@@ -1055,13 +1055,21 @@ def same_adder_shape(f,X):
     for i in range(len(ind)-1):
         Y.append(f[ind[i]:ind[i+1]])
     return Y[:-1],X[:-1]
-def gfp_dynamics_1cc(F,V,Cm1,beta,dtsim):
+def gfp_dynamics_1cc_(F,V,Cm1,beta,dtsim):
     """Knowing the concentration before division Cm1, mRNA dynamics F and Volume dynamics V compute GFP dynamics. Condition is concentration stay constant at division"""
     G = np.zeros_like(F)
     G[0] = Cm1*V[0]
     for k in range(len(F)-1):
         G[k+1] = G[k]+(V[k]*F[k]-beta*G[k])*dtsim
     return G,G[-1]/V[-1]
+def gfp_dynamics_1cc(F,V,Cm1,beta,dtsim):
+    """Divide GFP by 2 as in my model"""
+    G = np.zeros_like(F)
+    G[0] = Cm1/2
+    for k in range(len(F)-1):
+        G[k+1] = G[k]+(V[k]*F[k]-beta*G[k])*dtsim
+    return G,G[-1]
+
 def gfp_dynamics(F,V,Cm1,beta,dtsim):
     """Apply dynamics on all cells"""
     G = []
@@ -1079,7 +1087,7 @@ def the_pred_values(ml,gl,sl2,mq,gq,sq2,DV,beta):
     cvs = lambda x,y,z: np.sqrt(x/(2*y*z**2))
     print("Cv in elongation rate {} and mRNA {}".format(cvs(sl2,gl,ml),cvs(sq2,gq,mq)))
 def\
-similar_frame(ml,gl,sl2,sm2,mq,gq,sq2,DV,beta,C0,shape=(1,1000),dtsim=1,gfp_sym=False):
+similar_frame(ml,gl,sl2,sm2,mq,gq,sq2,DV,beta,shape=(1,1000),dtsim=1,gfp_sym=False,gerr=None,C0=None):
     """From  OU create a dataframe with same shape as biological data (divison at twice the size).. Consider also asymmetric division """
     if shape[0]>10: print('change naming of indexing cells since they may mix')
     explen = []; lane_ID=[]; parent_ID=[]; id_n=[-1]; time_sec=[]; df=[]
@@ -1087,6 +1095,8 @@ similar_frame(ml,gl,sl2,sm2,mq,gq,sq2,DV,beta,C0,shape=(1,1000),dtsim=1,gfp_sym=
     if gfp_sym :F = ornstein_uhlenbeck(mq,gq,sq2,shape,dtsim) # create elongation rate dynamics
     V = np.zeros_like(W)
     V0=DV
+    if C0==None:#if we want to use other division properites
+        C0=3/2*DV*mq/ml
     V[:,0] = V0 
     for i in range(W.shape[0]):
         X,Ww = adder(V0,W[i,:],DV,False,dtsim)#Adder model for size
@@ -1104,9 +1114,14 @@ similar_frame(ml,gl,sl2,sm2,mq,gq,sq2,DV,beta,C0,shape=(1,1000),dtsim=1,gfp_sym=
             id_n = ['{}'.format(float(j))]*int(len(k))
             explen= np.exp(np.random.normal(np.log(k),np.sqrt(sm2)))
             if gfp_sym:
-                gfp = np.random.normal(G[j],np.sqrt(G[j]))
+                if gerr==None:
+                    gfp = np.random.normal(G[j],np.sqrt(G[j]))
+                else:
+                    gfp = np.random.normal(G[j],np.sqrt(gerr))
+                if len(gfp)!=len(explen):
+                    continue
                 df.append(pd.DataFrame({'leng':explen,'lane_ID':lane_ID,'parent_id':parent_ID,\
-                                        'id':id_n,'gfp':gfp,'leng_no_noise':k,'growth_rate':Ww[j],'q_dyn':f[j]}))
+                                        'id':id_n,'gfp':gfp,'gfp_no_noise':G[j],'leng_no_noise':k,'growth_rate':Ww[j],'q_dyn':f[j]}))
             else:
                 #print("ok")
 #                print(len(explen)-len(Ww[j]))

@@ -6,7 +6,7 @@ imp.reload(rp)
 class minimize_protein(object):
     """Do minimization on """
     def __init__(self, free,fixed={},\
-                 method='L-BFGS-B',boundary=None,resc=[1e02,1e-02,1e03,1e05,1e05,1e-02]):
+                 method='L-BFGS-B',boundary=None,resc=None):
         """These 3 dictionary fixed the free param, constrained param, boundary"""
         assert type(fixed)==dict
         assert type(free)==dict;assert free!={}
@@ -15,8 +15,6 @@ class minimize_protein(object):
         self.method = method
         self.boundary = boundary
         self.resc = resc
-        if boundary==None: # Only positive values allowed
-            self.boundary = [(1e-13,None)]*len(free)
         #Check all keys are either fixed or not
         assert set(fixed.keys())|set((free.keys()))==set(('sm2', 'sigma2',\
                                                           'gamma','mean','b','sgd2'))
@@ -70,41 +68,46 @@ class minimize_protein(object):
        #     grad[1] += 2*reg*x[1]
        #     grad[2] += 2*reg*x[2]
        #     return obj, grad 
-    def tot_grad_obj(self,x0,in_dic,fun=rp.grad_obj_wrap,reg=None,resc=True):
+    def tot_grad_obj(self,x0,in_dic,fun=rp.grad_obj_wrap,reg=None):
         """Return total obj and grad depending on the x0 np.array"""
         # From the reduced x0 rebuild entire vector and compute obj and grad
         #ts = time.time()
-        if norm:
-            x = self.rebuild_param(x0,**self.fixed)
-            x[0]*self.resc[0]
-            x[1]*self.resc[1]
-            x[2]*self.resc[2]
-            x[3]*self.resc[3]
-            x[4]*self.resc[4]
-            x[5]*self.resc[5]
+        x = self.rebuild_param(x0,**self.fixed)
+        x = self.resc_mult(x)
         tmp =\
         self.tot_objective(x,in_dic,fun,reg)
         obj = tmp[0]
+        print(obj,x,x0)
         # return the sliced grad
         #grad =self.fix_par(tmp[1], **self.fixed)[0] 
         #print(time.time()-ts)
         #RESCALE LOG LIKELIHOOD IN ORDER TO HAVE MORE SUITABLE NUMBERS
-        obj = obj/in_dic['n_point']
+        #obj = obj/in_dic['n_point']
+        obj = obj/(in_dic['n_point'])
         #grad = grad/in_dic['n_point']
         return obj#,grad.reshape(-1)
     def initialize(self,resc=True):
         """Return the x np array"""
         x0 = [None]*6
         for i in self.free:
-            if i=='mean':x0[0]=self.free[i]
-            if i=='gamma':x0[1]=self.free[i]
-            if i=='sigma2':x0[2]=self.free[i]
-            if i=='sm2':x0[3]=self.free[i]
-            if i=='sgd2':x0[4]=self.free[i]
-            if i=='b':x0[5]=self.free[i]
+            if i=='mean':x0[0]=self.free[i]/self.resc['mean']
+            if i=='gamma':x0[1]=self.free[i]/self.resc['gamma']
+            if i=='sigma2':x0[2]=self.free[i]/self.resc['sigma2']
+            if i=='sm2':x0[3]=self.free[i]/self.resc['sm2']
+            if i=='sgd2':x0[4]=self.free[i]/self.resc['sgd2']
+            if i=='b':x0[5]=self.free[i]/self.resc['b']
         x0 = [x for x in x0 if x is not None]
-        if resc:
-            x0 = [x0[i]/self.resc[i] for i in range(len(x0))]
+        return np.array(x0)
+    def resc_mult(self,x0):
+        """Return the x np array"""
+        for i in self.free:
+            if i=='mean':x0[0]=x0[0]*self.resc['mean']
+            if i=='gamma':x0[1]=x0[1]*self.resc['gamma']
+            if i=='sigma2':x0[2]=x0[2]*self.resc['sigma2']
+            if i=='sm2':x0[3]=x0[3]*self.resc['sm2']
+            if i=='sgd2':x0[4]=x0[4]*self.resc['sgd2']
+            if i=='b':x0[5]=x0[5]*self.resc['b']
+        x0 = [x for x in x0 if x is not None]
         return np.array(x0)
 
     def minimize_both_vers(self,in_dic,x0=None,numerical=True,fun=rp.grad_obj_wrap,factr=1e4,pgtol=1e-08,reg=None):
@@ -119,7 +122,7 @@ class minimize_protein(object):
             funct = lambda x:\
                 self.tot_grad_obj(x0=x,in_dic=in_dic,fun=fun,reg=reg)
             x,obj,tmp = fmin_l_bfgs_b(funct, x0,\
-                        approx_grad=True,epsilon=1e-08,bounds=self.boundary,factr=factr,pgtol=pgtol)
+                        approx_grad=True,bounds=self.boundary,factr=factr,pgtol=pgtol,iprint=-100)
         #else:
         #    x,obj,tmp = fmin_l_bfgs_b(self.tot_grad_obj,x0,args=(in_dic,fun,reg),\
         #                fprime=None,bounds=self.boundary,factr=factr,pgtol=pgtol)
@@ -154,20 +157,20 @@ class minimize_protein(object):
 #    def correct_scaling(self,in_dic):
 #        res = in_dic['rescale']
 #        return [self.mean/res,self.gamma,self.sigma2/res**2,self.sm2/res**2]
-#    def gradient_descent(self,in_dic,eta=1e-06,runtime=10000,x0=None\
-#                         ,show=False,fun=rp.grad_obj_wrap,reg=None):
-#        if x0 is None:
-#            theta = self.initialize()
-#        else:
-#            theta=x0
-#        for k in range(runtime):
-#            _ , grtheta = self.tot_grad_obj(x0=theta,in_dic=in_dic,\
-#                              fun=fun,reg=reg)
-#            vt = eta*grtheta
-#            theta = theta-vt
-#            if show:
-#                print('objective',_,theta)
-#        return theta,_
+    def gradient_descent(self,in_dic,eta=1e-06,runtime=10000,x0=None\
+                         ,show=False,fun=rp.grad_obj_wrap,reg=None):
+        if x0 is None:
+            theta = self.initialize()
+        else:
+            theta=x0
+        for k in range(runtime):
+            _ , grtheta = self.tot_grad_obj(x0=theta,in_dic=in_dic,\
+                              fun=fun,reg=reg)
+            vt = eta*grtheta
+            theta = theta-vt
+            if show:
+                print('objective',_,theta)
+        return theta,_
 #    def ADAM(self,in_dic,b1=0.9,b2=0.99,eta=1e-03,eps=1e-10,runtime=10000,x0=None,show=False):
 #        if x0 is None:
 #            theta = self.initialize()

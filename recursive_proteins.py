@@ -494,8 +494,8 @@ def grad_obj_total(par_prot,par_len,reind_v,dat_v,s,IS,dt,nproc=10):
     fun = lambda x:\
         grad_obj_1lane(x[0],x[1],par_prot,par_len,IS,s,dt,True)
     ret = p.map(fun,zip(reind_v,dat_v))
-    ret = np.sum(np.vstack(ret),axis=0)
-    return ret[0],ret[1:]
+    ret = np.sum(np.vstack(ret)[:,0],axis=0)#there is no gradient
+    return ret,None
 def grad_obj_wrap(par_prot,par_len,in_dic):
     reind_v,dat_v,s,IS,dt,lane_ID_v,val_v=\
     in_dic['reind_v'],in_dic['dat_v'],in_dic['s'],in_dic['IS'],in_dic['dt'],in_dic['lane_ID_v'],in_dic['val_v']
@@ -611,8 +611,9 @@ def build_intial_mat(df,leng,prot,b):
     q = (q+b*g0)/(np.exp(x0.astype(float)))
     ####### They do not depend on the parameters
     mat = np.zeros((4,4)); vec = np.zeros((4,1))
-    s = (np.mean(x0),np.mean(lam),np.mean(g0),np.mean(q))
-    IS = (1./np.var(x0),0,0,0,1/np.var(lam),0,0,1/np.var(g0),0,1/np.var(q))
+    s = (np.nanmean(x0),np.nanmean(lam),np.nanmean(g0),np.nanmean(q))
+    IS =\
+    (1./np.nanvar(x0),0,0,0,1/np.nanvar(lam),0,0,1/np.nanvar(g0),0,1/np.nanvar(q))
     return s, IS, sx2, sg2
 def build_mat(mother,daugther,dfl,leng,prot):
     """Find the correct structure. It will return [mum_ind,daughter1_ind,daughter2_ind] and [mum_ind,[Len(dau1),Len(daug2)]]"""
@@ -635,52 +636,7 @@ def who_goes_where(val):
     tmp1 = np.vstack(list(map(fun,tmp1)))
     tmp2 = np.vstack(list(map(fun,tmp2)))
     return np.hstack([tmp1,tmp2])
-#
-#def asym_dist_1lane(reind_,dat_,dt):
-#    """Find the asymmetric distribution in log space for one lane"""
-#    from copy import deepcopy
-#    reind = deepcopy(reind_); dat = deepcopy(dat_)
-#    distx0 = []; distlam = []; distk0 = []           # total objective and gradient
-#    def pred_moth(i,j):
-#        """Predict division length and growth rate. Do same for inital one"""
-#        # Linear fit one cell cycle to estimate length mother and lenght daughter
-#        W=dat[i][1][j].reshape(-1)
-#        t = np.arange(0,dt*len(W),dt)
-#        tmp = linregress(t,W)
-#        tmp1 = linregress(t[:4],W[:4])
-#        tmp2 = linregress(t[:4],W[-4:])
-#        if np.isnan(reind[i,j]) == False:
-#            # predict cell lenght at division and el_rat
-#            foo = np.append(t,t[-1]+dt/2)*tmp.slope+tmp.intercept
-#            dat[int(reind[i,j])][0] = {'ml':foo[-1],'mlam':tmp2.slope}
-#        return tmp.intercept, tmp1.slope #x0 and lambda
-#    ## APPLY
-#    for i in range(len(dat)):
-#        # If cell doesn't have mother just predict length of daugther and save them
-#        if type(dat[i][0])!=dict:
-#            pred_moth(i,0);
-#            if np.sum(np.isnan(dat[i][1][1]))==0:
-#                pred_moth(i,1)
-#        # If it does has a mother predict its length and save the log  difference betwee half of mother cell and daugther one
-#        else:
-#            x0,lam = pred_moth(i,0)
-#            distx0.append(dat[i][0]['ml']-np.log(2)-x0)
-#            distlam.append(dat[i][0]['mlam']-lam)
-#            distk0.append([x0,lam])
-#            if np.sum(np.isnan(dat[i][1][1]))==0:
-#                x0,lam = pred_moth(i,1)
-#                distx0.append(dat[i][0]['ml']-np.log(2)-x0)
-#                distlam.append(dat[i][0]['mlam']-lam)
-#                distk0.append([x0,lam])
-#    return distx0, distlam, distk0
-#def asym_dist(reind_v,dat_v,dt):
-#    """Return distribution of difference between predictd half size and actual cell division (distx0); differene in growth rates between mother and daugheter (distlam); and initial condition (x,lam) distk0 """
-#    distx0 = []; distlam = []; distk0 =[]
-#    for i,j in enumerate(dat_v):
-#        dx0 , dlam, dk0 = asym_dist_1lane(reind_v[i],dat_v[i],dt)
-#        distx0.append(dx0); distlam.append(dlam); distk0.append(dk0)
-#    flat = lambda dist: np.array([j for k in dist for j in k])
-#    return flat(distx0),flat(distlam), flat(distk0)
+    return flat(distx0),flat(distlam), flat(distk0)
 def asym_div(dat_v,rescale=1):
     """Predict the amount of asymmetric division by considering the 2 daughter must sum up to the total"""
     from scipy.stats import linregress
@@ -706,11 +662,12 @@ def asym_div(dat_v,rescale=1):
     return np.var(flat(sxd2)),np.var(flat(sgd2))
 #
 def build_data_strucutre(df,leng,prot,b):
-    """Return for every lane the data with respective daughteres and initial conditions"""
+    """Return for every lane the data with respective daughteres and initial\
+    conditions, b=beta"""
     #Sometimes cells with 1 data point are present and we don't want them
     df = df.groupby('cell').filter(lambda x: x.values.shape[0]>1) #
     dt = np.diff(np.sort(df['time_sec'].unique()))[1]/60
-    assert dt%3==0 and dt != 0., "look if dt make sense"
+    #assert dt%3==0 and dt != 0., "look if dt make sense"
     #rescae
     df['log_resc_'+leng] = np.log(df['{}'.format(leng)])
     #print("The variable to use is: log_resc_{}".format(leng))
@@ -758,7 +715,7 @@ def merge_df_pred(df,pred_mat):
     dft['sub_ind'] = dft.groupby('cell_')['pred_log_length'].transform(lambda x:\
                                                                np.arange(len(x)))
     # Create same indexing in df
-    df['cell_'] = df['lane_ID']+df['id'].apply(lambda x: '_'+str(x)+'.0')
+    df['cell_'] = df['lane_ID']+df['id'].apply(lambda x: '_'+str(int(float(x)))+'.0')
     df['sub_ind'] = df.groupby('cell_')['time_sec'].transform(lambda x:\
                                                               np.arange(len(x)))
     #Concat, reindex, delete column used for mergin 
