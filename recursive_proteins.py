@@ -105,6 +105,9 @@ def meangt(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,s
     dGl = -((dle*np.exp(m0)*(-np.exp(-(b*dt)) + np.exp(dt*(-gq + le))))/(b - gq + le)**2) + (dle*dt*np.exp(dt*(-gq + le) + m0))/(b - gq + le)
     dGx = (np.exp(m0)*(-np.exp(-(b*dt)) + np.exp(dt*(-gq + le))))/(b - gq + le)
     return m2*np.exp(-b*dt)+ F + d2Fx*C00/2+d2Fl*C11/2+d2Fxl*C01+dGl*C13+dGx*C03
+
+#def meangt(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
+#    return np.exp(m0)*m3*dt+(1-b*dt)*m2
 def new_mean(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
     """Start from P(z_t|D_t)= N(m;C) and find P(z_{t+dt}|D_t), the mean here"""
     #Seems ok
@@ -246,6 +249,8 @@ def cov22(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq
         (np.exp(2*b*t)*(b + le)*(b - gq + le)**2)
     return sq2/(2*gq)*np.exp(2*m0)*(F*(1+C00/2)+dF*C01+ddF*C11/2)+C22*np.exp(-2*b*dt)
 
+#def cov22(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
+#    return np.exp(C11)*C33*dt**2+(1-b*dt)**2*C22
 def new_cov(m0,m1,m2,m3,C00,C01,C02,C03,C11,C12,C13,C22,C23,C33,ml,gl,sl2,mq,gq,sq2,dt,b):
     """Start from P(z_t|D_t)= N(m;C) and find P(z_{t+dt}|D_t), the covariance here"""
     eglt = np.exp(-gl*dt)
@@ -412,7 +417,7 @@ def log_likelihood(xm,gm,m0,m1,m2,m3,IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ2
     pr = prefactor(xm,gm,m0,m1,m2,m3,IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33,sx2,sg2)
     return pr + 1/2*(det(IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33)+det(PC00,PC01,PC02,PC03,PC11,PC12,PC13,PC22,PC23,PC33)-np.log(sg2)-np.log(sx2))-np.pi
 #------------------ LOG LIKELIHOOD AT CELL DIVISION-----------------------------------
-def cell_division_likelihood_and_grad(m0,m1,m2,m3,IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33,sxd2,sgd2):
+def cell_division_likelihood_and_grad_(m0,m1,m2,m3,IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33,sxd2,sgd2):
     """The lengths and gfp get divided in 2 with sdx2 and sdg2 as variances"""
     IS00 =(IQ00 - 4*IQ02**2*sgd2 + 4*IQ00*IQ22*sgd2)/(1 + IQ00*sxd2 - 4*IQ02**2*sgd2*sxd2 + 4*IQ22*(sgd2 + IQ00*sgd2*sxd2))
     IS01 =(IQ01 - 4*IQ02*IQ12*sgd2 + 4*IQ01*IQ22*sgd2)/(1 + IQ00*sxd2 - 4*IQ02**2*sgd2*sxd2 + 4*IQ22*(sgd2 + IQ00*sgd2*sxd2))
@@ -431,6 +436,12 @@ def cell_division_likelihood_and_grad(m0,m1,m2,m3,IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,
     #S = inverseQ(IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33)
     s = (m0-np.log(2),m1,m2/2,m3)
     return s,(IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33)
+
+def cell_division_likelihood_and_grad(m0,m1,m2,m3,IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33,sxd2,sgd2):
+    s = (m0-np.log(2),m1,m2/2,m3)
+    IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33 = inverseQ(IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33)
+    IS00+=sxd2; IS22+=sgd2
+    return s,inverseQ(IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33)
 #------------------ OBJECTIVE OVER CELL CYCLE/ LANE AND TOTAL-----------------------------------
 def obj_and_grad_1cc(W,ml,gl,sl2,mq,gq,sq2,sx2,sg2,sxd2,sgd2,s0,s1,s2,s3,IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33,dt,b):
     """ Compute the objective over 1 cell cycle"""
@@ -502,6 +513,8 @@ def grad_obj_wrap(par_prot,par_len,in_dic):
     return grad_obj_total(par_prot,par_len,reind_v,\
                           dat_v,s,IS,dt,nproc=10)
 #-------------------PREDICTIONS-------------------------- 
+def print_mat(name,a,A):
+        print(name,a[0],a[1],a[2],a[3],A[0],A[4],A[7],A[9])
 def predictions_1cc(W,ml,gl,sl2,mq,gq,sq2,sx2,sg2,sxd2,sgd2,s0,s1,s2,s3,IS00,IS01,IS02,IS03,IS11,IS12,IS13,IS22,IS23,IS33,dt,b):
     """Return optimal vector z and std over 1 cc"""
     from IPython.core.debugger import set_trace
@@ -519,6 +532,9 @@ def predictions_1cc(W,ml,gl,sl2,mq,gq,sq2,sx2,sg2,sxd2,sgd2,s0,s1,s2,s3,IS00,IS0
         IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33 = inverseQ(Q[0],Q[1],Q[2],Q[3],Q[4],Q[5],Q[6],Q[7],Q[8],Q[9])
         #print(IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33 )
         nm,PC = posteriori_matrices(W[j,0],W[j,1],m[0],m[1],m[2],m[3],IQ00,IQ01,IQ02,IQ03,IQ11,IQ12,IQ13,IQ22,IQ23,IQ33 ,sx2,sg2)
+        print_mat('prior',m,Q)
+        print('measure',W[j,0],W[j,1],sx2,sg2)
+        print_mat('posterior',nm,PC)
         z.append(nm); err_z.append(np.sqrt(np.array([PC[0],PC[4],PC[7],PC[9]])))
         ##### Likelihood
     # Predict for daughter cell

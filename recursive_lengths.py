@@ -465,7 +465,6 @@ def hess_cell_division_likelihood(m,Q,grad_mat_Q,sd2,rescale):
     S = np.array([[Q[0,0]+sd2,Q[0,1]],[Q[0,1],Q[1,1]]])
     s = np.array([[m[0,0]-rescale*np.log(2)],[m[1,0]]])
     return s,S,grad_mat_Q
-
 def obj_and_grad_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,grad_matS,rescale,sd2):
     """Objective and gradient over 1 cell cycle"""
     ##### likelihood and gradient at initial conditions
@@ -585,6 +584,8 @@ def inverse(A):
     assert A.shape==(2,2)
     return np.array([[A[1,1],-A[0,1]],[-A[1,0],A[0,0]]])\
             /(A[0,0]*A[1,1]-A[0,1]*A[1,0])
+def print_mat(name,a,A):
+    print(name,a[0,0],a[1,0],A[0,0],A[0,1],A[1,1])
 def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,rescale,sd2):
     """Return optiman length and growth (z) and std as erro """
     z = []; err_z=[]
@@ -592,6 +593,9 @@ def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,rescale,sd2):
     F, A, a = parameters(gamma,dt,mlam,sl2)
     ##### P(z_0|x_0^m)
     b,B = posteriori_matrices(W[0,0],s,S,sm2)
+    print_mat('n_prior',s,S)
+    print('n_measure',W[0,0],sm2,0,0)
+    print_mat('n_posterior',b,B)
     z.append(np.array(b)); err_z.append(np.sqrt(np.array([B[0,0],B[1,1]])))
     for j in range(1,W.shape[1]):
        ###### P(z_{t+dt}|D_t) = N(m,Q))
@@ -600,7 +604,10 @@ def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,rescale,sd2):
         b,B = posteriori_matrices(W[0,j],m,Q,sm2)
         ##### Optimal predicitons 
         #InvB = inverse(B)
-        z.append(np.array(b)); err_z.append(np.sqrt(np.array([B[0,0],B[1,1]])))
+        print_mat('prior',m,Q)
+        print('measure',W[0,j],sm2,0,0)
+        print_mat('posterior',b,B)
+    z.append(np.array(b)); err_z.append(np.sqrt(np.array([B[0,0],B[1,1]])))
     # Find next cell intial conditions
     m,Q = new_mean_cov(b,B,F,A,a)
     # Find next cell initial conditions
