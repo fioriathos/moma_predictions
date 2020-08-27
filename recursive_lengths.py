@@ -593,9 +593,9 @@ def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,rescale,sd2):
     F, A, a = parameters(gamma,dt,mlam,sl2)
     ##### P(z_0|x_0^m)
     b,B = posteriori_matrices(W[0,0],s,S,sm2)
-    print_mat('n_prior',s,S)
-    print('n_measure',W[0,0],sm2,0,0)
-    print_mat('n_posterior',b,B)
+    #print_mat('n_prior',s,S)
+    #print('n_measure',W[0,0],sm2,0,0)
+    #print_mat('n_posterior',b,B)
     z.append(np.array(b)); err_z.append(np.sqrt(np.array([B[0,0],B[1,1]])))
     for j in range(1,W.shape[1]):
        ###### P(z_{t+dt}|D_t) = N(m,Q))
@@ -604,10 +604,10 @@ def predictions_1cc(W,mlam,gamma,sl2,sm2,dt,s,S,rescale,sd2):
         b,B = posteriori_matrices(W[0,j],m,Q,sm2)
         ##### Optimal predicitons 
         #InvB = inverse(B)
-        print_mat('prior',m,Q)
-        print('measure',W[0,j],sm2,0,0)
-        print_mat('posterior',b,B)
-    z.append(np.array(b)); err_z.append(np.sqrt(np.array([B[0,0],B[1,1]])))
+        #print_mat('prior',m,Q)
+        #print('measure',W[0,j],sm2,0,0)
+        #print_mat('posterior',b,B)
+    	z.append(np.array(b)); err_z.append(np.sqrt(np.array([B[0,0],B[1,1]])))
     # Find next cell intial conditions
     m,Q = new_mean_cov(b,B,F,A,a)
     # Find next cell initial conditions
